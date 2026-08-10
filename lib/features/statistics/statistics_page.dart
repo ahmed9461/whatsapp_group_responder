@@ -8,7 +8,6 @@ class StatisticsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final stats = controller.statistics;
-    final top = (stats['top'] as List?) ?? const [];
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -34,7 +33,7 @@ class StatisticsPage extends StatelessWidget {
                 ),
                 title: const Text('إجمالي استخدام آخر 24 ساعة'),
                 trailing: Text(
-                  '${stats['total'] ?? stats['totalUsage'] ?? 0}',
+                  '${stats.total}',
                   style: Theme.of(context)
                       .textTheme
                       .headlineSmall
@@ -48,7 +47,7 @@ class StatisticsPage extends StatelessWidget {
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 10),
-            if (top.isEmpty)
+            if (stats.top.isEmpty)
               const Card(
                 child: Padding(
                   padding: EdgeInsets.all(20),
@@ -56,17 +55,15 @@ class StatisticsPage extends StatelessWidget {
                 ),
               )
             else
-              ...top.whereType<Map>().map((raw) {
-                final item = Map<String, dynamic>.from(raw);
+              ...stats.top.map((item) {
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Card(
                     child: ListTile(
-                      title: Text(
-                        '${item['title'] ?? item['trigger'] ?? item['command'] ?? 'رد'}',
-                      ),
+                      title: Text(item.title.isEmpty ? 'رد' : item.title),
                       trailing: Text(
-                        '${item['count'] ?? item['usageCount'] ?? 0}',
+                        '${item.uses}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ),
                   ),

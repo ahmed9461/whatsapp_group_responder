@@ -100,6 +100,95 @@ class ApiApproval {
       );
 }
 
+class ApiUsageRank {
+  const ApiUsageRank({
+    required this.id,
+    required this.title,
+    required this.uses,
+  });
+
+  final int id;
+  final String title;
+  final int uses;
+
+  factory ApiUsageRank.fromJson(Map<String, dynamic> json) => ApiUsageRank(
+        id: _int(json['id']),
+        title: '${json['title'] ?? ''}',
+        uses: _int(json['uses']),
+      );
+}
+
+class ApiStatistics {
+  const ApiStatistics({
+    required this.total,
+    required this.top,
+    required this.approvedGroups,
+    required this.commands,
+  });
+
+  final int total;
+  final List<ApiUsageRank> top;
+  final int approvedGroups;
+  final int commands;
+
+  factory ApiStatistics.fromJson(Map<String, dynamic> json) => ApiStatistics(
+        total: _int(json['total']),
+        top: ((json['top'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((item) => ApiUsageRank.fromJson(Map<String, dynamic>.from(item)))
+            .toList(),
+        approvedGroups: _int(json['approvedGroups']),
+        commands: _int(json['commands']),
+      );
+
+  static const empty = ApiStatistics(
+    total: 0,
+    top: <ApiUsageRank>[],
+    approvedGroups: 0,
+    commands: 0,
+  );
+}
+
+class ApiWhatsAppStatus {
+  const ApiWhatsAppStatus({
+    required this.state,
+    required this.registered,
+    required this.usableSession,
+    required this.requiresRelink,
+    required this.pairingReady,
+    required this.lastError,
+  });
+
+  final String state;
+  final bool registered;
+  final bool usableSession;
+  final bool requiresRelink;
+  final bool pairingReady;
+  final String? lastError;
+
+  bool get connected => state == 'ready' && usableSession;
+  bool get connecting => state == 'connecting' || state == 'disconnected';
+
+  factory ApiWhatsAppStatus.fromJson(Map<String, dynamic> json) =>
+      ApiWhatsAppStatus(
+        state: '${json['state'] ?? ''}',
+        registered: json['registered'] == true,
+        usableSession: json['usableSession'] == true,
+        requiresRelink: json['requiresRelink'] == true,
+        pairingReady: json['pairingReady'] == true,
+        lastError: json['lastError']?.toString(),
+      );
+
+  static const empty = ApiWhatsAppStatus(
+    state: '',
+    registered: false,
+    usableSession: false,
+    requiresRelink: false,
+    pairingReady: false,
+    lastError: null,
+  );
+}
+
 class EnrollmentResult {
   EnrollmentResult({
     required this.id,
