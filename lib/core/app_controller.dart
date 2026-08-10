@@ -103,25 +103,31 @@ class AppController extends ChangeNotifier {
     final errors = <Object>[];
     try {
       await Future.wait<void>([
-        _capture(() async => status = await api.getStatus(), errors),
-        _capture(() async => commands = await api.getCommands(), errors),
-        _capture(() async => groups = await api.getGroups(), errors),
-        _capture(() async => approvals = await api.getApprovals(), errors),
-        _capture(
-          () async =>
-              statistics = ApiStatistics.fromJson(await api.getStatistics()),
-          errors,
-        ),
-        _capture(() async => settings = await api.getSettings(), errors),
-        _capture(
-          () async => whatsappStatus =
-              ApiWhatsAppStatus.fromJson(await api.getWhatsAppStatus()),
-          errors,
-        ),
+        _capture(() async {
+          status = await api.getStatus();
+        }, errors),
+        _capture(() async {
+          commands = await api.getCommands();
+        }, errors),
+        _capture(() async {
+          groups = await api.getGroups();
+        }, errors),
+        _capture(() async {
+          approvals = await api.getApprovals();
+        }, errors),
+        _capture(() async {
+          statistics = ApiStatistics.fromJson(await api.getStatistics());
+        }, errors),
+        _capture(() async {
+          settings = await api.getSettings();
+        }, errors),
+        _capture(() async {
+          whatsappStatus =
+              ApiWhatsAppStatus.fromJson(await api.getWhatsAppStatus());
+        }, errors),
       ]);
 
-      final hasRefreshToken = (await secureStore.refreshToken) != null;
-      isLinked = hasRefreshToken;
+      isLinked = (await secureStore.refreshToken) != null;
       error = errors.isEmpty ? null : '${errors.first}';
     } finally {
       if (!silent) busy = false;
