@@ -18,15 +18,18 @@ class AppController extends ChangeNotifier {
   String serverUrl = 'http://127.0.0.1:8787/api/v1';
 
   Map<String, dynamic> status = {};
-  Map<String, dynamic> statistics = {};
+  ApiStatistics statistics = ApiStatistics.empty;
   Map<String, dynamic> settings = {};
-  Map<String, dynamic> whatsappStatus = {};
+  ApiWhatsAppStatus whatsappStatus = ApiWhatsAppStatus.empty;
   List<ApiCommand> commands = [];
   List<ApiGroup> groups = [];
   List<ApiApproval> approvals = [];
 
   StreamSubscription<Map<String, dynamic>>? _events;
   Timer? _eventReconnect;
+  Timer? _fallbackRefresh;
+  bool _liveRefreshRunning = false;
+  bool _liveRefreshQueued = false;
 
   Future<void> initialize() async {
     serverUrl = await preferences.getServerUrl();
@@ -39,7 +42,7 @@ class AppController extends ChangeNotifier {
     isLinked = (await secureStore.refreshToken) != null;
     if (isLinked) {
       await refreshAll(silent: true);
-      _startEvents();
+      _startLiveUpdates();
     }
     notifyListeners();
   }
@@ -70,7 +73,7 @@ class AppController extends ChangeNotifier {
     );
     isLinked = true;
     await refreshAll();
-    _startEvents();
+    _startLiveUpdates();
     notifyListeners();
   }
 
@@ -78,14 +81,15 @@ class AppController extends ChangeNotifier {
     await secureStore.clearProjectSession();
     await _events?.cancel();
     _eventReconnect?.cancel();
+    _fallbackRefresh?.cancel();
     isLinked = false;
     commands = [];
     groups = [];
     approvals = [];
     status = {};
-    statistics = {};
+    statistics = ApiStatistics.empty;
     settings = {};
-    whatsappStatus = {};
+    whatsappStatus = ApiWhatsAppStatus.empty;
     notifyListeners();
   }
 
@@ -95,30 +99,44 @@ class AppController extends ChangeNotifier {
       error = null;
       notifyListeners();
     }
+
+    final errors = <Object>[];
     try {
-      final values = await Future.wait<Object>([
-        api.getStatus(),
-        api.getCommands(),
-        api.getGroups(),
-        api.getApprovals(),
-        api.getStatistics(),
-        api.getSettings(),
-        api.getWhatsAppStatus(),
+      await Future.wait<void>([
+        _capture(() async => status = await api.getStatus(), errors),
+        _capture(() async => commands = await api.getCommands(), errors),
+        _capture(() async => groups = await api.getGroups(), errors),
+        _capture(() async => approvals = await api.getApprovals(), errors),
+        _capture(
+          () async =>
+              statistics = ApiStatistics.fromJson(await api.getStatistics()),
+          errors,
+        ),
+        _capture(() async => settings = await api.getSettings(), errors),
+        _capture(
+          () async => whatsappStatus =
+              ApiWhatsAppStatus.fromJson(await api.getWhatsAppStatus()),
+          errors,
+        ),
       ]);
-      status = values[0] as Map<String, dynamic>;
-      commands = values[1] as List<ApiCommand>;
-      groups = values[2] as List<ApiGroup>;
-      approvals = values[3] as List<ApiApproval>;
-      statistics = values[4] as Map<String, dynamic>;
-      settings = values[5] as Map<String, dynamic>;
-      whatsappStatus = values[6] as Map<String, dynamic>;
-      isLinked = true;
-    } catch (e) {
-      error = '$e';
-      if ((await secureStore.refreshToken) == null) isLinked = false;
+
+      final hasRefreshToken = (await secureStore.refreshToken) != null;
+      isLinked = hasRefreshToken;
+      error = errors.isEmpty ? null : '${errors.first}';
     } finally {
-      busy = false;
+      if (!silent) busy = false;
       notifyListeners();
+    }
+  }
+
+  Future<void> _capture(
+    Future<void> Function() operation,
+    List<Object> errors,
+  ) async {
+    try {
+      await operation();
+    } catch (e) {
+      errors.add(e);
     }
   }
 
@@ -138,12 +156,12 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> refreshStats() async {
-    statistics = await api.getStatistics();
+    statistics = ApiStatistics.fromJson(await api.getStatistics());
     notifyListeners();
   }
 
   Future<void> refreshWhatsApp() async {
-    whatsappStatus = await api.getWhatsAppStatus();
+    whatsappStatus = ApiWhatsAppStatus.fromJson(await api.getWhatsAppStatus());
     notifyListeners();
   }
 
@@ -153,27 +171,53 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _startLiveUpdates() {
+    _startEvents();
+    _fallbackRefresh?.cancel();
+    _fallbackRefresh = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (isLinked) unawaited(_refreshFromLiveSignal());
+    });
+  }
+
   void _startEvents() {
     _events?.cancel();
     _eventReconnect?.cancel();
     _events = api.events().listen(
-      (_) => refreshAll(silent: true),
+      (_) => unawaited(_refreshFromLiveSignal()),
       onDone: _scheduleEventReconnect,
       onError: (_) => _scheduleEventReconnect(),
     );
   }
 
+  Future<void> _refreshFromLiveSignal() async {
+    if (!isLinked) return;
+    if (_liveRefreshRunning) {
+      _liveRefreshQueued = true;
+      return;
+    }
+
+    _liveRefreshRunning = true;
+    try {
+      do {
+        _liveRefreshQueued = false;
+        await refreshAll(silent: true);
+      } while (_liveRefreshQueued && isLinked);
+    } finally {
+      _liveRefreshRunning = false;
+    }
+  }
+
   void _scheduleEventReconnect() {
     _eventReconnect?.cancel();
     if (!isLinked) return;
-    _eventReconnect =
-        Timer(const Duration(seconds: 5), _startEvents);
+    _eventReconnect = Timer(const Duration(seconds: 5), _startEvents);
   }
 
   @override
   void dispose() {
     _events?.cancel();
     _eventReconnect?.cancel();
+    _fallbackRefresh?.cancel();
     api.close();
     super.dispose();
   }
