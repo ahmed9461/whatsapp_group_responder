@@ -17,6 +17,29 @@ fi
 
 if [ -f android/app/build.gradle.kts ]; then
   sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24/' android/app/build.gradle.kts
+
+  python3 - <<'PY'
+from pathlib import Path
+
+path = Path('android/app/build.gradle.kts')
+text = path.read_text(encoding='utf-8')
+
+stable_debug_config = '''    signingConfigs {
+        getByName("debug") {
+            storeFile = rootProject.file("../tool/signing/whatsapp-responder-release.jks")
+        }
+    }
+
+'''
+
+if 'whatsapp-responder-release.jks' not in text:
+    marker = '    buildTypes {\n'
+    if marker not in text:
+        raise SystemExit('Could not locate buildTypes block in generated Gradle file')
+    text = text.replace(marker, stable_debug_config + marker, 1)
+
+path.write_text(text, encoding='utf-8')
+PY
 fi
 
 cat > android/app/src/main/AndroidManifest.xml <<'EOF'
