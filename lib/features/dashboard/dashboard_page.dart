@@ -8,12 +8,20 @@ class DashboardPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final whatsapp = controller.whatsappStatus;
-    final connected =
-        whatsapp['connected'] == true || whatsapp['status'] == 'connected';
-    final usage =
-        controller.statistics['total'] ??
-        controller.statistics['totalUsage'] ??
-        0;
+    final connected = whatsapp.connected;
+    final usage = controller.statistics.total;
+
+    final statusText = switch (whatsapp.state) {
+      'ready' => 'متصل ويعمل',
+      'connecting' => 'جاري الاتصال...',
+      'disconnected' => 'يعيد الاتصال...',
+      'pairing' => 'بانتظار الربط',
+      'revoked' => 'الجلسة تحتاج إعادة ربط',
+      'replaced' => 'تم استبدال الجلسة',
+      'resetting' => 'جاري إعادة تجهيز الجلسة',
+      'pairing_error' => 'تعذر إكمال الربط',
+      _ => whatsapp.registered ? 'حالة الجلسة غير مستقرة' : 'غير مرتبط',
+    };
 
     return RefreshIndicator(
       onRefresh: controller.refreshAll,
@@ -45,19 +53,21 @@ class DashboardPage extends StatelessWidget {
                 child: Icon(
                   connected
                       ? Icons.check_rounded
-                      : Icons.link_off_rounded,
+                      : whatsapp.requiresRelink
+                          ? Icons.sync_problem_rounded
+                          : Icons.sync_rounded,
                 ),
               ),
               title: const Text('حالة واتساب'),
-              subtitle: Text(
-                connected ? 'متصل ويعمل' : 'غير متصل أو يحتاج مراجعة',
-              ),
+              subtitle: Text(statusText),
               trailing: Text(
                 connected ? 'متصل' : 'غير متصل',
                 style: TextStyle(
                   color: connected
                       ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.error,
+                      : whatsapp.requiresRelink
+                          ? Theme.of(context).colorScheme.error
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.bold,
                 ),
               ),
