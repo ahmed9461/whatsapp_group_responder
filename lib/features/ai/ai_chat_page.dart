@@ -73,7 +73,11 @@ class _AiChatPageState extends State<AiChatPage> {
 
     final key = await widget.controller.secureStore.deepSeekApiKey;
     if (key == null || key.isEmpty) {
-      if (mounted) setState(() => _error = 'أضف DeepSeek API Key من الإعدادات أولًا.');
+      if (mounted) {
+        setState(
+          () => _error = 'أضف DeepSeek API Key من الإعدادات أولًا.',
+        );
+      }
       return;
     }
 
@@ -89,7 +93,8 @@ class _AiChatPageState extends State<AiChatPage> {
     _messages = await _repo.messages(id);
 
     final model = await widget.controller.preferences.getDeepSeekModel();
-    final thinking = await widget.controller.preferences.getDeepSeekThinking();
+    final thinking =
+        await widget.controller.preferences.getDeepSeekThinking();
     if (!mounted) return;
     setState(() {
       _sending = true;
@@ -110,7 +115,9 @@ class _AiChatPageState extends State<AiChatPage> {
         _jumpBottom();
       }
       final answer = _streaming.trim();
-      if (answer.isNotEmpty) await _repo.addMessage(id, 'assistant', answer);
+      if (answer.isNotEmpty) {
+        await _repo.addMessage(id, 'assistant', answer);
+      }
       _messages = await _repo.messages(id);
       await _loadConversations();
     } catch (e) {
@@ -148,7 +155,10 @@ class _AiChatPageState extends State<AiChatPage> {
       builder: (sheetContext) => Column(
         children: [
           ListTile(
-            title: const Text('المحادثات', style: TextStyle(fontWeight: FontWeight.bold)),
+            title: const Text(
+              'المحادثات',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             trailing: IconButton(
               onPressed: () async {
                 Navigator.pop(sheetContext);
@@ -165,7 +175,11 @@ class _AiChatPageState extends State<AiChatPage> {
                 final item = _conversations[index];
                 return ListTile(
                   selected: item.id == _conversationId,
-                  title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  title: Text(
+                    item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   onTap: () {
                     Navigator.pop(sheetContext);
                     _openConversation(item.id);
@@ -206,10 +220,12 @@ class _AiChatPageState extends State<AiChatPage> {
       builder: (dialogContext) => SimpleDialog(
         title: const Text('استخدام النص كرد'),
         children: widget.controller.commands
-            .map((command) => SimpleDialogOption(
-                  onPressed: () => Navigator.pop(dialogContext, command),
-                  child: Text(command.title),
-                ))
+            .map(
+              (command) => SimpleDialogOption(
+                onPressed: () => Navigator.pop(dialogContext, command),
+                child: Text(command.title),
+              ),
+            )
             .toList(),
       ),
     );
@@ -234,7 +250,10 @@ class _AiChatPageState extends State<AiChatPage> {
     );
     if (confirmed != true) return;
 
-    await widget.controller.api.updateCommand(selected.id, {'responseText': text});
+    await widget.controller.api.updateCommand(
+      selected.id,
+      {'responseText': text},
+    );
     await widget.controller.refreshCommands();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -263,8 +282,14 @@ class _AiChatPageState extends State<AiChatPage> {
         title: const Text('الذكاء الاصطناعي'),
         backgroundColor: Colors.transparent,
         actions: [
-          IconButton(onPressed: _newConversation, icon: const Icon(Icons.add_comment_rounded)),
-          IconButton(onPressed: _showConversations, icon: const Icon(Icons.history_rounded)),
+          IconButton(
+            onPressed: _newConversation,
+            icon: const Icon(Icons.add_comment_rounded),
+          ),
+          IconButton(
+            onPressed: _showConversations,
+            icon: const Icon(Icons.history_rounded),
+          ),
         ],
       ),
       body: Column(
@@ -281,12 +306,32 @@ class _AiChatPageState extends State<AiChatPage> {
             ),
           Expanded(
             child: visible.isEmpty
-                ? const Center(
+                ? Center(
                     child: Padding(
-                      padding: EdgeInsets.all(28),
-                      child: Text(
-                        'محادثة حرة مع DeepSeek.\nلا يوجد System Prompt داخلي.\n\nمثال: «رتب لي هذه الرسالة بشكل احترافي»',
-                        textAlign: TextAlign.center,
+                      padding: const EdgeInsets.all(28),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.auto_awesome_rounded,
+                            size: 42,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          const SizedBox(height: 14),
+                          Text(
+                            'ابدأ محادثة جديدة',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleLarge
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'اكتب رسالتك أو اطلب إعادة صياغة أي نص.',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
                       ),
                     ),
                   )
@@ -298,15 +343,21 @@ class _AiChatPageState extends State<AiChatPage> {
                       final message = visible[index];
                       final assistant = message.role == 'assistant';
                       return Align(
-                        alignment: assistant ? Alignment.centerRight : Alignment.centerLeft,
+                        alignment: assistant
+                            ? Alignment.centerRight
+                            : Alignment.centerLeft,
                         child: Container(
                           constraints: const BoxConstraints(maxWidth: 680),
                           margin: const EdgeInsets.only(bottom: 12),
                           padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
                           decoration: BoxDecoration(
                             color: assistant
-                                ? Theme.of(context).colorScheme.surfaceContainerHigh
-                                : Theme.of(context).colorScheme.primaryContainer,
+                                ? Theme.of(context)
+                                    .colorScheme
+                                    .surfaceContainerHigh
+                                : Theme.of(context)
+                                    .colorScheme
+                                    .primaryContainer,
                             borderRadius: BorderRadius.circular(18),
                           ),
                           child: Column(
@@ -322,19 +373,32 @@ class _AiChatPageState extends State<AiChatPage> {
                                     IconButton(
                                       tooltip: 'نسخ',
                                       onPressed: () async {
-                                        await Clipboard.setData(ClipboardData(text: message.content));
+                                        await Clipboard.setData(
+                                          ClipboardData(text: message.content),
+                                        );
                                         if (context.mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            const SnackBar(content: Text('تم النسخ')),
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            const SnackBar(
+                                              content: Text('تم النسخ'),
+                                            ),
                                           );
                                         }
                                       },
-                                      icon: const Icon(Icons.copy_rounded, size: 19),
+                                      icon: const Icon(
+                                        Icons.copy_rounded,
+                                        size: 19,
+                                      ),
                                     ),
                                     IconButton(
                                       tooltip: 'استخدام كرد',
-                                      onPressed: _sending ? null : () => _useAsReply(message.content),
-                                      icon: const Icon(Icons.quickreply_rounded, size: 19),
+                                      onPressed: _sending
+                                          ? null
+                                          : () => _useAsReply(message.content),
+                                      icon: const Icon(
+                                        Icons.quickreply_rounded,
+                                        size: 19,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -359,7 +423,9 @@ class _AiChatPageState extends State<AiChatPage> {
                       minLines: 1,
                       maxLines: 6,
                       textInputAction: TextInputAction.newline,
-                      decoration: const InputDecoration(hintText: 'اكتب رسالتك...'),
+                      decoration: const InputDecoration(
+                        hintText: 'اكتب رسالتك...',
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
