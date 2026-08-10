@@ -19,16 +19,6 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
 
-  late final List<Widget> _pages = [
-    DashboardPage(controller: widget.controller),
-    CommandsPage(controller: widget.controller),
-    GroupsPage(controller: widget.controller),
-    ApprovalsPage(controller: widget.controller),
-    StatisticsPage(controller: widget.controller),
-    AiChatPage(controller: widget.controller),
-    SettingsPage(controller: widget.controller),
-  ];
-
   static const _destinations = [
     NavigationDestination(
       icon: Icon(Icons.home_rounded),
@@ -60,53 +50,69 @@ class _HomeShellState extends State<HomeShell> {
     ),
   ];
 
+  List<Widget> _buildPages() => [
+        DashboardPage(controller: widget.controller),
+        CommandsPage(controller: widget.controller),
+        GroupsPage(controller: widget.controller),
+        ApprovalsPage(controller: widget.controller),
+        StatisticsPage(controller: widget.controller),
+        AiChatPage(controller: widget.controller),
+        SettingsPage(controller: widget.controller),
+      ];
+
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide = constraints.maxWidth >= 820;
-        final body = IndexedStack(index: _index, children: _pages);
+    return ListenableBuilder(
+      listenable: widget.controller,
+      builder: (context, _) {
+        final pages = _buildPages();
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final wide = constraints.maxWidth >= 820;
+            final body = IndexedStack(index: _index, children: pages);
 
-        if (wide) {
-          return Scaffold(
-            body: SafeArea(
-              child: Row(
-                children: [
-                  NavigationRail(
-                    selectedIndex: _index,
-                    onDestinationSelected: (value) {
-                      setState(() => _index = value);
-                    },
-                    labelType: NavigationRailLabelType.all,
-                    destinations: _destinations
-                        .map(
-                          (d) => NavigationRailDestination(
-                            icon: d.icon,
-                            selectedIcon: d.selectedIcon,
-                            label: Text(d.label),
-                          ),
-                        )
-                        .toList(),
+            if (wide) {
+              return Scaffold(
+                body: SafeArea(
+                  child: Row(
+                    children: [
+                      NavigationRail(
+                        selectedIndex: _index,
+                        onDestinationSelected: (value) {
+                          setState(() => _index = value);
+                        },
+                        labelType: NavigationRailLabelType.all,
+                        destinations: _destinations
+                            .map(
+                              (d) => NavigationRailDestination(
+                                icon: d.icon,
+                                selectedIcon: d.selectedIcon,
+                                label: Text(d.label),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                      const VerticalDivider(width: 1),
+                      Expanded(child: body),
+                    ],
                   ),
-                  const VerticalDivider(width: 1),
-                  Expanded(child: body),
-                ],
-              ),
-            ),
-          );
-        }
+                ),
+              );
+            }
 
-        return Scaffold(
-          body: SafeArea(child: body),
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: _index,
-            onDestinationSelected: (value) {
-              setState(() => _index = value);
-            },
-            destinations: _destinations,
-            labelBehavior:
-                NavigationDestinationLabelBehavior.onlyShowSelected,
-          ),
+            return Scaffold(
+              body: SafeArea(child: body),
+              bottomNavigationBar: NavigationBar(
+                selectedIndex: _index,
+                onDestinationSelected: (value) {
+                  setState(() => _index = value);
+                },
+                destinations: _destinations,
+                labelBehavior:
+                    NavigationDestinationLabelBehavior.onlyShowSelected,
+              ),
+            );
+          },
         );
       },
     );
