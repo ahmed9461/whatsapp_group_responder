@@ -45,7 +45,10 @@ class _SettingsPageState extends State<SettingsPage> {
     final maintenance = widget.controller.settings['maintenanceMode'] == true;
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(title: const Text('الإعدادات'), backgroundColor: Colors.transparent),
+      appBar: AppBar(
+        title: const Text('الإعدادات'),
+        backgroundColor: Colors.transparent,
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -93,9 +96,18 @@ class _SettingsPageState extends State<SettingsPage> {
                 initialValue: widget.controller.themeMode,
                 decoration: const InputDecoration(labelText: 'وضع المظهر'),
                 items: const [
-                  DropdownMenuItem(value: ThemeMode.system, child: Text('حسب النظام')),
-                  DropdownMenuItem(value: ThemeMode.light, child: Text('فاتح')),
-                  DropdownMenuItem(value: ThemeMode.dark, child: Text('داكن')),
+                  DropdownMenuItem(
+                    value: ThemeMode.system,
+                    child: Text('حسب النظام'),
+                  ),
+                  DropdownMenuItem(
+                    value: ThemeMode.light,
+                    child: Text('فاتح'),
+                  ),
+                  DropdownMenuItem(
+                    value: ThemeMode.dark,
+                    child: Text('داكن'),
+                  ),
                 ],
                 onChanged: (value) {
                   if (value != null) widget.controller.setThemeMode(value);
@@ -121,8 +133,13 @@ class _SettingsPageState extends State<SettingsPage> {
                             labelText: 'DeepSeek API Key',
                             hintText: 'sk-...',
                             suffixIcon: IconButton(
-                              onPressed: () => setState(() => _showKey = !_showKey),
-                              icon: Icon(_showKey ? Icons.visibility_off_rounded : Icons.visibility_rounded),
+                              onPressed: () =>
+                                  setState(() => _showKey = !_showKey),
+                              icon: Icon(
+                                _showKey
+                                    ? Icons.visibility_off_rounded
+                                    : Icons.visibility_rounded,
+                              ),
                             ),
                           ),
                         ),
@@ -131,16 +148,24 @@ class _SettingsPageState extends State<SettingsPage> {
                           initialValue: _model,
                           decoration: const InputDecoration(labelText: 'النموذج'),
                           items: const [
-                            DropdownMenuItem(value: 'deepseek-v4-pro', child: Text('V4 Pro')),
-                            DropdownMenuItem(value: 'deepseek-v4-flash', child: Text('V4 Flash')),
+                            DropdownMenuItem(
+                              value: 'deepseek-v4-pro',
+                              child: Text('V4 Pro'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'deepseek-v4-flash',
+                              child: Text('V4 Flash'),
+                            ),
                           ],
-                          onChanged: (value) => setState(() => _model = value ?? _model),
+                          onChanged: (value) =>
+                              setState(() => _model = value ?? _model),
                         ),
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
                           title: const Text('Thinking mode'),
                           value: _thinking,
-                          onChanged: (value) => setState(() => _thinking = value),
+                          onChanged: (value) =>
+                              setState(() => _thinking = value),
                         ),
                         Row(
                           children: [
@@ -148,7 +173,9 @@ class _SettingsPageState extends State<SettingsPage> {
                               child: OutlinedButton.icon(
                                 onPressed: _testing ? null : _testDeepSeek,
                                 icon: const Icon(Icons.science_rounded),
-                                label: Text(_testing ? 'جاري الاختبار...' : 'اختبار الاتصال'),
+                                label: Text(
+                                  _testing ? 'جاري الاختبار...' : 'اختبار الاتصال',
+                                ),
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -160,11 +187,6 @@ class _SettingsPageState extends State<SettingsPage> {
                               ),
                             ),
                           ],
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'لا يوجد System Prompt داخلي. المحادثة ترسل رسائلك وسجل user/assistant فقط.',
-                          style: TextStyle(fontSize: 12),
                         ),
                       ],
                     ),
@@ -206,7 +228,9 @@ class _SettingsPageState extends State<SettingsPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$e')),
+        );
       }
     } finally {
       client.close();
