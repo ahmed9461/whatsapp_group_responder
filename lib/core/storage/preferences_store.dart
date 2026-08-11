@@ -6,10 +6,28 @@ class PreferencesStore {
   static const _deepSeekModel = 'deepseek_model';
   static const _deepSeekThinking = 'deepseek_thinking';
 
+  static const defaultServerUrl =
+      'https://vmi3452413.tailc13979.ts.net/api/v1';
+  static const _legacyLocalServerUrl = 'http://127.0.0.1:8787/api/v1';
+
   final SharedPreferencesAsync _prefs = SharedPreferencesAsync();
 
-  Future<String> getServerUrl() async =>
-      await _prefs.getString(_serverUrl) ?? 'http://127.0.0.1:8787/api/v1';
+  Future<String> getServerUrl() async {
+    final saved = (await _prefs.getString(_serverUrl))?.trim();
+    if (saved == null || saved.isEmpty) {
+      return defaultServerUrl;
+    }
+
+    // Migrate installs that were previously pointed at the Termux-local API.
+    // The server has moved to the private Tailscale HTTPS endpoint, while the
+    // backend itself continues listening safely on 127.0.0.1 behind Serve.
+    if (saved == _legacyLocalServerUrl) {
+      await _prefs.setString(_serverUrl, defaultServerUrl);
+      return defaultServerUrl;
+    }
+
+    return saved;
+  }
 
   Future<void> setServerUrl(String value) =>
       _prefs.setString(_serverUrl, value.trim());
