@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import '../../core/app_controller.dart';
 import '../../core/models.dart';
 import 'ai_repository.dart';
@@ -262,6 +263,45 @@ class _AiChatPageState extends State<AiChatPage> {
     }
   }
 
+  Widget _messageContent(BuildContext context, AiMessage message) {
+    if (message.role != 'assistant') {
+      return SelectableText(message.content);
+    }
+
+    return MarkdownBody(
+      data: message.content,
+      selectable: true,
+      styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+        p: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.55),
+        h1: Theme.of(context)
+            .textTheme
+            .headlineSmall
+            ?.copyWith(fontWeight: FontWeight.w800),
+        h2: Theme.of(context)
+            .textTheme
+            .titleLarge
+            ?.copyWith(fontWeight: FontWeight.w800),
+        h3: Theme.of(context)
+            .textTheme
+            .titleMedium
+            ?.copyWith(fontWeight: FontWeight.w700),
+        blockquoteDecoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        code: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontFamily: 'monospace',
+              backgroundColor:
+                  Theme.of(context).colorScheme.surfaceContainerHighest,
+            ),
+        codeblockDecoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(10),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final visible = <AiMessage>[
@@ -363,7 +403,7 @@ class _AiChatPageState extends State<AiChatPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              SelectableText(message.content),
+                              _messageContent(context, message),
                               if (assistant && message.content.isNotEmpty) ...[
                                 const SizedBox(height: 6),
                                 Wrap(
