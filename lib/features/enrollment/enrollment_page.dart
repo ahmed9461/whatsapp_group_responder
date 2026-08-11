@@ -19,6 +19,7 @@ class _EnrollmentPageState extends State<EnrollmentPage> {
   Timer? _poller;
   bool _busy = false;
   String? _error;
+  String? _notice;
 
   @override
   void initState() {
@@ -35,10 +36,14 @@ class _EnrollmentPageState extends State<EnrollmentPage> {
   }
 
   Future<void> _requestLink() async {
+    _poller?.cancel();
     setState(() {
       _busy = true;
       _error = null;
+      _notice = null;
+      _request = null;
     });
+
     try {
       await widget.controller.setServerUrl(_server.text);
       await widget.controller.api.health();
@@ -49,13 +54,16 @@ class _EnrollmentPageState extends State<EnrollmentPage> {
             : _deviceName.text.trim(),
         deviceInstanceId: instance,
       );
+      if (!mounted) return;
       setState(() => _request = request);
       _startPolling(request);
     } on ApiException catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.code == 'ENROLLMENT_WINDOW_CLOSED'
-          ? 'الربط مغلق. افتحه من Telegram ثم حاول مرة أخرى.'
+          ? 'استقبال طلبات الربط مغلق حاليًا. افتحه من Telegram ثم أعد المحاولة.'
           : e.message);
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = 'تعذر الاتصال بالخادم: $e');
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -89,10 +97,15 @@ class _EnrollmentPageState extends State<EnrollmentPage> {
       } else if (status == 'rejected' || status == 'expired') {
         _poller?.cancel();
         setState(() {
-          _error = status == 'rejected'
-              ? 'تم رفض طلب الربط من Telegram.'
-              : 'انتهت مهلة طلب الربط.';
           _request = null;
+          if (status == 'rejected') {
+            _error = 'تم رفض طلب الربط من Telegram.';
+            _notice = null;
+          } else {
+            _error = null;
+            _notice =
+                'انتهى طلب الربط السابق فقط. إذا كان استقبال الربط ما زال مفتوحًا في Telegram، أرسل طلبًا جديدًا.';
+          }
         });
       }
     } catch (_) {
@@ -152,6 +165,35 @@ class _EnrollmentPageState extends State<EnrollmentPage> {
                                 labelText: 'اسم الجهاز',
                               ),
                             ),
+                            if (_notice != null) ...[
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: scheme.secondaryContainer,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(
+                                      Icons.info_outline_rounded,
+                                      size: 20,
+                                      color: scheme.onSecondaryContainer,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        _notice!,
+                                        style: TextStyle(
+                                          color: scheme.onSecondaryContainer,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                             if (_error != null) ...[
                               const SizedBox(height: 12),
                               Text(
@@ -204,7 +246,11 @@ class _EnrollmentPageState extends State<EnrollmentPage> {
                             TextButton(
                               onPressed: () {
                                 _poller?.cancel();
-                                setState(() => _request = null);
+                                setState(() {
+                                  _request = null;
+                                  _error = null;
+                                  _notice = null;
+                                });
                               },
                               child: const Text('إلغاء'),
                             ),
