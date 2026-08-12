@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+
 import '../../core/app_controller.dart';
+import 'usage_analytics_card.dart';
 
 class DashboardPage extends StatelessWidget {
   const DashboardPage({super.key, required this.controller});
@@ -9,19 +11,21 @@ class DashboardPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final whatsapp = controller.whatsappStatus;
     final connected = whatsapp.connected;
-    final usage = controller.statistics.total;
+    final stats = controller.statistics;
 
-    final statusText = switch (whatsapp.state) {
-      'ready' => 'متصل ويعمل',
-      'connecting' => 'جاري الاتصال...',
-      'disconnected' => 'يعيد الاتصال...',
-      'pairing' => 'بانتظار الربط',
-      'revoked' => 'الجلسة تحتاج إعادة ربط',
-      'replaced' => 'تم استبدال الجلسة',
-      'resetting' => 'جاري إعادة تجهيز الجلسة',
-      'pairing_error' => 'تعذر إكمال الربط',
-      _ => whatsapp.registered ? 'حالة الجلسة غير مستقرة' : 'غير مرتبط',
-    };
+    final statusText = connected
+        ? 'متصل ويعمل'
+        : switch (whatsapp.state) {
+            'connecting' => 'جاري الاتصال...',
+            'disconnected' => 'يعيد الاتصال...',
+            'pairing' => 'بانتظار الربط',
+            'revoked' => 'الجلسة تحتاج إعادة ربط',
+            'replaced' => 'تم استبدال الجلسة',
+            'resetting' => 'جاري إعادة تجهيز الجلسة',
+            'pairing_error' => 'تعذر إكمال الربط',
+            'ready' => 'جاري التحقق من الاتصال',
+            _ => whatsapp.registered ? 'غير متصل حاليًا' : 'غير مرتبط',
+          };
 
     return RefreshIndicator(
       onRefresh: controller.refreshAll,
@@ -40,6 +44,7 @@ class DashboardPage extends StatelessWidget {
                 ),
               ),
               IconButton(
+                tooltip: 'تحديث الكل',
                 onPressed: controller.busy ? null : controller.refreshAll,
                 icon: const Icon(Icons.refresh_rounded),
               ),
@@ -60,23 +65,11 @@ class DashboardPage extends StatelessWidget {
               ),
               title: const Text('حالة واتساب'),
               subtitle: Text(statusText),
-              trailing: Text(
-                connected ? 'متصل' : 'غير متصل',
-                style: TextStyle(
-                  color: connected
-                      ? Theme.of(context).colorScheme.primary
-                      : whatsapp.requiresRelink
-                          ? Theme.of(context).colorScheme.error
-                          : Theme.of(context).colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
             ),
           ),
           const SizedBox(height: 16),
           GridView.count(
-            crossAxisCount:
-                MediaQuery.sizeOf(context).width > 600 ? 4 : 2,
+            crossAxisCount: MediaQuery.sizeOf(context).width > 600 ? 4 : 2,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             mainAxisSpacing: 12,
@@ -99,11 +92,18 @@ class DashboardPage extends StatelessWidget {
                 icon: Icons.hourglass_top_rounded,
               ),
               _Metric(
-                title: 'استخدام 24س',
-                value: '$usage',
+                title: 'استخدام ${stats.periodLabel}',
+                value: '${stats.total}',
                 icon: Icons.insights_rounded,
               ),
             ],
+          ),
+          const SizedBox(height: 16),
+          UsageAnalyticsCard(
+            statistics: stats,
+            selectedPeriod: controller.statisticsPeriod,
+            loading: controller.statsBusy,
+            onPeriodChanged: controller.setStatisticsPeriod,
           ),
           if (controller.error != null) ...[
             const SizedBox(height: 16),
@@ -152,7 +152,7 @@ class _Metric extends StatelessWidget {
                   .headlineMedium
                   ?.copyWith(fontWeight: FontWeight.bold),
             ),
-            Text(title),
+            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
           ],
         ),
       ),
