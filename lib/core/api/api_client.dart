@@ -1,47 +1,498 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
+
 import 'package:http/http.dart' as http;
+
 import '../models.dart';
 import '../storage/secure_store.dart';
 import 'api_exception.dart';
 
 class ApiClient {
-  ApiClient({required this.secureStore,required String baseUrl,http.Client? client}):_baseUrl=_normalizeBaseUrl(baseUrl),_client=client??http.Client();
-  final SecureStore secureStore; final http.Client _client; String _baseUrl; String get baseUrl=>_baseUrl; void setBaseUrl(String v)=>_baseUrl=_normalizeBaseUrl(v);
-  static String _normalizeBaseUrl(String input){var v=input.trim();while(v.endsWith('/'))v=v.substring(0,v.length-1);if(!v.endsWith('/api/v1'))v='$v/api/v1';return v;} Uri _uri(String p)=>Uri.parse('$_baseUrl$p');
-  Future<Map<String,dynamic>> health()async=>_dataMap(await _client.get(_uri('/health')).timeout(const Duration(seconds:10)));
-  Future<EnrollmentResult> createEnrollment({required String deviceName,required String deviceInstanceId})async=>EnrollmentResult.fromJson(_dataMap(await _client.post(_uri('/device-enrollments'),headers:_jsonHeaders(),body:jsonEncode({'deviceName':deviceName,'platform':'android','appVersion':'0.1.3','deviceInstanceId':deviceInstanceId})).timeout(const Duration(seconds:15))));
-  Future<Map<String,dynamic>> enrollmentStatus(String id,String token)async=>_dataMap(await _client.get(_uri('/device-enrollments/$id'),headers:{'authorization':'Bearer $token'}).timeout(const Duration(seconds:10)));
-  Future<SessionTokens> claimEnrollment(String id,String token)async=>SessionTokens.fromJson(_dataMap(await _client.post(_uri('/device-enrollments/$id/claim'),headers:{..._jsonHeaders(),'authorization':'Bearer $token'}).timeout(const Duration(seconds:15))));
-  Future<Map<String,dynamic>> getStatus()=>getMap('/status');
-  Future<List<ApiCommand>> getCommands()async=>(await getList('/commands')).map(ApiCommand.fromJson).toList();
-  Future<List<ApiGroup>> getGroups()async=>(await getList('/groups')).map(ApiGroup.fromJson).toList();
-  Future<List<ApiApproval>> getApprovals()async=>(await getList('/approvals')).map(ApiApproval.fromJson).toList();
-  Future<Map<String,dynamic>> getStatistics()=>getMap('/statistics'); Future<Map<String,dynamic>> getSettings()=>getMap('/settings'); Future<Map<String,dynamic>> getWhatsAppStatus()=>getMap('/whatsapp/status');
-  Future<List<ApiScheduledCampaign>> getScheduledCampaigns()async=>(await getList('/scheduled-campaigns')).map(ApiScheduledCampaign.fromJson).toList();
-  Future<List<ApiBroadcast>> getBroadcasts({int limit=50})async=>(await getList('/broadcasts?limit=$limit')).map(ApiBroadcast.fromJson).toList();
-  Future<ApiCommand> createCommand({required String trigger,required ApiMessageContent responseContent,required String scopeMode,required List<int> groupIds,int cooldownSeconds=3})async=>ApiCommand.fromJson(await postMap('/commands',{'trigger':trigger,'responseContent':responseContent.toJson(),'scopeMode':scopeMode,'groupIds':scopeMode=='all'?<int>[]:groupIds,'cooldownSeconds':cooldownSeconds}));
-  Future<ApiCommand> updateCommand(int id,Map<String,dynamic> fields)async=>ApiCommand.fromJson(await patchMap('/commands/$id',fields));
-  Future<void> deleteCommand(int id)async{await _authorizedRequest('DELETE','/commands/$id');}
-  Future<ApiCommand> addAlias(int id,String alias)async=>ApiCommand.fromJson(await postMap('/commands/$id/aliases',{'alias':alias}));
-  Future<ApiCommand> removeAlias(int id,int aliasId)async=>ApiCommand.fromJson(_dataMap(await _authorizedRequest('DELETE','/commands/$id/aliases/$aliasId')));
-  Future<ApiGroup> setGroupResponses(int id,bool enabled)async=>ApiGroup.fromJson(await patchMap('/groups/$id',{'responsesEnabled':enabled}));
-  Future<Map<String,dynamic>> decideApproval(int id,bool approve)=>postMap('/approvals/$id/${approve?'approve':'reject'}',const{}); Future<Map<String,dynamic>> setMaintenance(bool enabled)=>patchMap('/settings',{'maintenanceMode':enabled});
-  Future<ApiMediaAsset> uploadMedia({required Uint8List bytes,required String kind,required String mimeType,required String fileName})async=>ApiMediaAsset.fromJson(_dataMap(await _authorizedRequest('POST','/media',rawBody:bytes,extraHeaders:{'content-type':mimeType,'x-media-kind':kind,'x-file-name':fileName,'accept':'application/json'},timeout:const Duration(seconds:90))));
-  Future<void> deleteMedia(int id)async{await _authorizedRequest('DELETE','/media/$id');}
-  Future<ApiScheduledCampaign> createScheduledCampaign({required String name,required int intervalSeconds,required String selectionMode,required String targetMode,required List<int> groupIds,required bool enabled})async=>ApiScheduledCampaign.fromJson(await postMap('/scheduled-campaigns',{'name':name,'intervalSeconds':intervalSeconds,'selectionMode':selectionMode,'targetMode':targetMode,'groupIds':targetMode=='all'?<int>[]:groupIds,'enabled':enabled}));
-  Future<ApiScheduledCampaign> updateScheduledCampaign(int id,Map<String,dynamic> fields)async=>ApiScheduledCampaign.fromJson(await patchMap('/scheduled-campaigns/$id',fields));
-  Future<void> deleteScheduledCampaign(int id)async{await _authorizedRequest('DELETE','/scheduled-campaigns/$id');}
-  Future<ApiScheduledCampaign> addScheduledMessage(int id,ApiMessageContent content)async=>ApiScheduledCampaign.fromJson(await postMap('/scheduled-campaigns/$id/messages',{'content':content.toJson()}));
-  Future<ApiScheduledCampaign> deleteScheduledMessage(int id,int messageId)async=>ApiScheduledCampaign.fromJson(_dataMap(await _authorizedRequest('DELETE','/scheduled-campaigns/$id/messages/$messageId')));
-  Future<ApiBroadcast> runScheduledNow(int id)async{final d=await postMap('/scheduled-campaigns/$id/run-now',const{});final x=d['dispatch'];if(x is! Map)throw ApiException('INVALID_RESPONSE','Missing dispatch');return ApiBroadcast.fromJson(Map<String,dynamic>.from(x));}
-  Future<ApiBroadcast> createBroadcast({required ApiMessageContent content,required String targetMode,required List<int> groupIds})async=>ApiBroadcast.fromJson(await postMap('/broadcasts',{'content':content.toJson(),'targetMode':targetMode,'groupIds':targetMode=='all'?<int>[]:groupIds}));
-  Future<ApiBroadcast> getBroadcast(int id)async=>ApiBroadcast.fromJson(await getMap('/broadcasts/$id')); Future<ApiBroadcast> retryBroadcast(int id)async=>ApiBroadcast.fromJson(await postMap('/broadcasts/$id/retry-failed',const{})); Future<ApiBroadcast> cancelBroadcast(int id)async=>ApiBroadcast.fromJson(await postMap('/broadcasts/$id/cancel',const{}));
-  Future<Map<String,dynamic>> getMap(String p)async=>_dataMap(await _authorizedRequest('GET',p)); Future<List<Map<String,dynamic>>> getList(String p)async{final d=_decode(await _authorizedRequest('GET',p))['data'];if(d is! List)throw ApiException('INVALID_RESPONSE','Expected a list from $p');return d.whereType<Map>().map((e)=>Map<String,dynamic>.from(e)).toList();}
-  Future<Map<String,dynamic>> postMap(String p,Map<String,dynamic> b)async=>_dataMap(await _authorizedRequest('POST',p,body:b)); Future<Map<String,dynamic>> patchMap(String p,Map<String,dynamic> b)async=>_dataMap(await _authorizedRequest('PATCH',p,body:b));
-  Future<http.Response> _authorizedRequest(String method,String path,{Map<String,dynamic>? body,Uint8List? rawBody,Map<String,String>? extraHeaders,bool retry=true,Duration timeout=const Duration(seconds:20)})async{final access=await secureStore.accessToken;if(access==null)throw ApiException('UNAUTHORIZED','التطبيق غير مرتبط بالمشروع');final r=http.Request(method,_uri(path));r.headers.addAll({if(rawBody==null)..._jsonHeaders(),'authorization':'Bearer $access',...?extraHeaders});if(body!=null)r.body=jsonEncode(body);if(rawBody!=null)r.bodyBytes=rawBody;final response=await http.Response.fromStream(await _client.send(r).timeout(timeout));if(response.statusCode==401&&retry&&await refreshSession())return _authorizedRequest(method,path,body:body,rawBody:rawBody,extraHeaders:extraHeaders,retry:false,timeout:timeout);if(response.statusCode<200||response.statusCode>=300)_throwApi(response);return response;}
-  Future<bool> refreshSession()async{final refresh=await secureStore.refreshToken;if(refresh==null)return false;try{final response=await _client.post(_uri('/auth/refresh'),headers:_jsonHeaders(),body:jsonEncode({'refreshToken':refresh})).timeout(const Duration(seconds:15));final t=SessionTokens.fromJson(_dataMap(response));await secureStore.saveSession(accessToken:t.accessToken,refreshToken:t.refreshToken);return true;}on ApiException{await secureStore.clearProjectSession();return false;}}
-  Stream<Map<String,dynamic>> events()async*{final token=await secureStore.accessToken;if(token==null)return;final r=http.Request('GET',_uri('/events'))..headers['authorization']='Bearer $token'..headers['accept']='text/event-stream';final response=await _client.send(r);if(response.statusCode==401&&await refreshSession()){yield* events();return;}if(response.statusCode!=200)return;String? name;await for(final line in response.stream.transform(utf8.decoder).transform(const LineSplitter())){if(line.startsWith('event:'))name=line.substring(6).trim();else if(line.startsWith('data:')){try{final d=jsonDecode(line.substring(5).trim());if(d is Map)yield{'type':name??'message','data':Map<String,dynamic>.from(d)};}catch(_){}}else if(line.isEmpty)name=null;}}
-  Map<String,String> _jsonHeaders()=>const{'content-type':'application/json','accept':'application/json'}; Map<String,dynamic> _dataMap(http.Response r){if(r.statusCode<200||r.statusCode>=300)_throwApi(r);final d=_decode(r)['data'];if(d is! Map)throw ApiException('INVALID_RESPONSE','Invalid API response');return Map<String,dynamic>.from(d);} Map<String,dynamic> _decode(http.Response r){final d=jsonDecode(r.body.isEmpty?'{}':r.body);if(d is! Map)throw ApiException('INVALID_RESPONSE','Invalid JSON response');return Map<String,dynamic>.from(d);} Never _throwApi(http.Response r){try{final e=_decode(r)['error'];if(e is Map)throw ApiException('${e['code']??'HTTP_${r.statusCode}'}','${e['message']??'Request failed'}',statusCode:r.statusCode);}on FormatException{}throw ApiException('HTTP_${r.statusCode}','Request failed (${r.statusCode})',statusCode:r.statusCode);} void close()=>_client.close();
+  ApiClient({
+    required this.secureStore,
+    required String baseUrl,
+    http.Client? client,
+  })  : _baseUrl = _normalizeBaseUrl(baseUrl),
+        _client = client ?? http.Client();
+
+  final SecureStore secureStore;
+  final http.Client _client;
+  String _baseUrl;
+
+  String get baseUrl => _baseUrl;
+
+  void setBaseUrl(String value) {
+    _baseUrl = _normalizeBaseUrl(value);
+  }
+
+  static String _normalizeBaseUrl(String input) {
+    var value = input.trim();
+    while (value.endsWith('/')) {
+      value = value.substring(0, value.length - 1);
+    }
+    if (!value.endsWith('/api/v1')) {
+      value = '$value/api/v1';
+    }
+    return value;
+  }
+
+  Uri _uri(String path) => Uri.parse('$_baseUrl$path');
+
+  Future<Map<String, dynamic>> health() async {
+    final response = await _client
+        .get(_uri('/health'))
+        .timeout(const Duration(seconds: 10));
+    return _dataMap(response);
+  }
+
+  Future<EnrollmentResult> createEnrollment({
+    required String deviceName,
+    required String deviceInstanceId,
+  }) async {
+    final response = await _client
+        .post(
+          _uri('/device-enrollments'),
+          headers: _jsonHeaders(),
+          body: jsonEncode({
+            'deviceName': deviceName,
+            'platform': 'android',
+            'appVersion': '0.1.3',
+            'deviceInstanceId': deviceInstanceId,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    return EnrollmentResult.fromJson(_dataMap(response));
+  }
+
+  Future<Map<String, dynamic>> enrollmentStatus(
+    String id,
+    String enrollmentToken,
+  ) async {
+    final response = await _client
+        .get(
+          _uri('/device-enrollments/$id'),
+          headers: {'authorization': 'Bearer $enrollmentToken'},
+        )
+        .timeout(const Duration(seconds: 10));
+    return _dataMap(response);
+  }
+
+  Future<SessionTokens> claimEnrollment(
+    String id,
+    String enrollmentToken,
+  ) async {
+    final response = await _client
+        .post(
+          _uri('/device-enrollments/$id/claim'),
+          headers: {
+            ..._jsonHeaders(),
+            'authorization': 'Bearer $enrollmentToken',
+          },
+        )
+        .timeout(const Duration(seconds: 15));
+    return SessionTokens.fromJson(_dataMap(response));
+  }
+
+  Future<Map<String, dynamic>> getStatus() => getMap('/status');
+
+  Future<List<ApiCommand>> getCommands() async {
+    return (await getList('/commands')).map(ApiCommand.fromJson).toList();
+  }
+
+  Future<List<ApiGroup>> getGroups() async {
+    return (await getList('/groups')).map(ApiGroup.fromJson).toList();
+  }
+
+  Future<List<ApiApproval>> getApprovals() async {
+    return (await getList('/approvals')).map(ApiApproval.fromJson).toList();
+  }
+
+  Future<Map<String, dynamic>> getStatistics() => getMap('/statistics');
+
+  Future<Map<String, dynamic>> getSettings() => getMap('/settings');
+
+  Future<Map<String, dynamic>> getWhatsAppStatus() {
+    return getMap('/whatsapp/status');
+  }
+
+  Future<List<ApiScheduledCampaign>> getScheduledCampaigns() async {
+    return (await getList('/scheduled-campaigns'))
+        .map(ApiScheduledCampaign.fromJson)
+        .toList();
+  }
+
+  Future<List<ApiBroadcast>> getBroadcasts({int limit = 50}) async {
+    return (await getList('/broadcasts?limit=$limit'))
+        .map(ApiBroadcast.fromJson)
+        .toList();
+  }
+
+  Future<ApiCommand> createCommand({
+    required String trigger,
+    required ApiMessageContent responseContent,
+    required String scopeMode,
+    required List<int> groupIds,
+    int cooldownSeconds = 3,
+  }) async {
+    final data = await postMap('/commands', {
+      'trigger': trigger,
+      'responseContent': responseContent.toJson(),
+      'scopeMode': scopeMode,
+      'groupIds': scopeMode == 'all' ? <int>[] : groupIds,
+      'cooldownSeconds': cooldownSeconds,
+    });
+    return ApiCommand.fromJson(data);
+  }
+
+  Future<ApiCommand> updateCommand(
+    int id,
+    Map<String, dynamic> fields,
+  ) async {
+    return ApiCommand.fromJson(await patchMap('/commands/$id', fields));
+  }
+
+  Future<void> deleteCommand(int id) async {
+    await _authorizedRequest('DELETE', '/commands/$id');
+  }
+
+  Future<ApiCommand> addAlias(int id, String alias) async {
+    return ApiCommand.fromJson(
+      await postMap('/commands/$id/aliases', {'alias': alias}),
+    );
+  }
+
+  Future<ApiCommand> removeAlias(int id, int aliasId) async {
+    final response = await _authorizedRequest(
+      'DELETE',
+      '/commands/$id/aliases/$aliasId',
+    );
+    return ApiCommand.fromJson(_dataMap(response));
+  }
+
+  Future<ApiGroup> setGroupResponses(int id, bool enabled) async {
+    return ApiGroup.fromJson(
+      await patchMap('/groups/$id', {'responsesEnabled': enabled}),
+    );
+  }
+
+  Future<Map<String, dynamic>> decideApproval(int id, bool approve) {
+    return postMap(
+      '/approvals/$id/${approve ? 'approve' : 'reject'}',
+      const {},
+    );
+  }
+
+  Future<Map<String, dynamic>> setMaintenance(bool enabled) {
+    return patchMap('/settings', {'maintenanceMode': enabled});
+  }
+
+  Future<ApiMediaAsset> uploadMedia({
+    required Uint8List bytes,
+    required String kind,
+    required String mimeType,
+    required String fileName,
+  }) async {
+    final response = await _authorizedRequest(
+      'POST',
+      '/media',
+      rawBody: bytes,
+      extraHeaders: {
+        'content-type': mimeType,
+        'x-media-kind': kind,
+        'x-file-name': fileName,
+        'accept': 'application/json',
+      },
+      timeout: const Duration(seconds: 90),
+    );
+    return ApiMediaAsset.fromJson(_dataMap(response));
+  }
+
+  Future<void> deleteMedia(int id) async {
+    await _authorizedRequest('DELETE', '/media/$id');
+  }
+
+  Future<ApiScheduledCampaign> createScheduledCampaign({
+    required String name,
+    required int intervalSeconds,
+    required String selectionMode,
+    required String targetMode,
+    required List<int> groupIds,
+    required bool enabled,
+  }) async {
+    final data = await postMap('/scheduled-campaigns', {
+      'name': name,
+      'intervalSeconds': intervalSeconds,
+      'selectionMode': selectionMode,
+      'targetMode': targetMode,
+      'groupIds': targetMode == 'all' ? <int>[] : groupIds,
+      'enabled': enabled,
+    });
+    return ApiScheduledCampaign.fromJson(data);
+  }
+
+  Future<ApiScheduledCampaign> updateScheduledCampaign(
+    int id,
+    Map<String, dynamic> fields,
+  ) async {
+    return ApiScheduledCampaign.fromJson(
+      await patchMap('/scheduled-campaigns/$id', fields),
+    );
+  }
+
+  Future<void> deleteScheduledCampaign(int id) async {
+    await _authorizedRequest('DELETE', '/scheduled-campaigns/$id');
+  }
+
+  Future<ApiScheduledCampaign> addScheduledMessage(
+    int id,
+    ApiMessageContent content,
+  ) async {
+    return ApiScheduledCampaign.fromJson(
+      await postMap(
+        '/scheduled-campaigns/$id/messages',
+        {'content': content.toJson()},
+      ),
+    );
+  }
+
+  Future<ApiScheduledCampaign> deleteScheduledMessage(
+    int id,
+    int messageId,
+  ) async {
+    final response = await _authorizedRequest(
+      'DELETE',
+      '/scheduled-campaigns/$id/messages/$messageId',
+    );
+    return ApiScheduledCampaign.fromJson(_dataMap(response));
+  }
+
+  Future<ApiBroadcast> runScheduledNow(int id) async {
+    final data = await postMap('/scheduled-campaigns/$id/run-now', const {});
+    final dispatch = data['dispatch'];
+    if (dispatch is! Map) {
+      throw ApiException('INVALID_RESPONSE', 'Missing dispatch');
+    }
+    return ApiBroadcast.fromJson(Map<String, dynamic>.from(dispatch));
+  }
+
+  Future<ApiBroadcast> createBroadcast({
+    required ApiMessageContent content,
+    required String targetMode,
+    required List<int> groupIds,
+  }) async {
+    return ApiBroadcast.fromJson(
+      await postMap('/broadcasts', {
+        'content': content.toJson(),
+        'targetMode': targetMode,
+        'groupIds': targetMode == 'all' ? <int>[] : groupIds,
+      }),
+    );
+  }
+
+  Future<ApiBroadcast> getBroadcast(int id) async {
+    return ApiBroadcast.fromJson(await getMap('/broadcasts/$id'));
+  }
+
+  Future<ApiBroadcast> retryBroadcast(int id) async {
+    return ApiBroadcast.fromJson(
+      await postMap('/broadcasts/$id/retry-failed', const {}),
+    );
+  }
+
+  Future<ApiBroadcast> cancelBroadcast(int id) async {
+    return ApiBroadcast.fromJson(
+      await postMap('/broadcasts/$id/cancel', const {}),
+    );
+  }
+
+  Future<Map<String, dynamic>> getMap(String path) async {
+    return _dataMap(await _authorizedRequest('GET', path));
+  }
+
+  Future<List<Map<String, dynamic>>> getList(String path) async {
+    final response = await _authorizedRequest('GET', path);
+    final data = _decode(response)['data'];
+    if (data is! List) {
+      throw ApiException('INVALID_RESPONSE', 'Expected a list from $path');
+    }
+    return data
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> postMap(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
+    return _dataMap(await _authorizedRequest('POST', path, body: body));
+  }
+
+  Future<Map<String, dynamic>> patchMap(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
+    return _dataMap(await _authorizedRequest('PATCH', path, body: body));
+  }
+
+  Future<http.Response> _authorizedRequest(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    Uint8List? rawBody,
+    Map<String, String>? extraHeaders,
+    bool retry = true,
+    Duration timeout = const Duration(seconds: 20),
+  }) async {
+    final accessToken = await secureStore.accessToken;
+    if (accessToken == null) {
+      throw ApiException('UNAUTHORIZED', 'التطبيق غير مرتبط بالمشروع');
+    }
+
+    final request = http.Request(method, _uri(path));
+    request.headers.addAll({
+      if (rawBody == null) ..._jsonHeaders(),
+      'authorization': 'Bearer $accessToken',
+      ...?extraHeaders,
+    });
+    if (body != null) {
+      request.body = jsonEncode(body);
+    }
+    if (rawBody != null) {
+      request.bodyBytes = rawBody;
+    }
+
+    final streamed = await _client.send(request).timeout(timeout);
+    final response = await http.Response.fromStream(streamed);
+
+    if (response.statusCode == 401 && retry) {
+      final refreshed = await refreshSession();
+      if (refreshed) {
+        return _authorizedRequest(
+          method,
+          path,
+          body: body,
+          rawBody: rawBody,
+          extraHeaders: extraHeaders,
+          retry: false,
+          timeout: timeout,
+        );
+      }
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      _throwApi(response);
+    }
+    return response;
+  }
+
+  Future<bool> refreshSession() async {
+    final refreshToken = await secureStore.refreshToken;
+    if (refreshToken == null) return false;
+
+    try {
+      final response = await _client
+          .post(
+            _uri('/auth/refresh'),
+            headers: _jsonHeaders(),
+            body: jsonEncode({'refreshToken': refreshToken}),
+          )
+          .timeout(const Duration(seconds: 15));
+      final tokens = SessionTokens.fromJson(_dataMap(response));
+      await secureStore.saveSession(
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+      );
+      return true;
+    } on ApiException {
+      await secureStore.clearProjectSession();
+      return false;
+    }
+  }
+
+  Stream<Map<String, dynamic>> events() async* {
+    final token = await secureStore.accessToken;
+    if (token == null) return;
+
+    final request = http.Request('GET', _uri('/events'))
+      ..headers['authorization'] = 'Bearer $token'
+      ..headers['accept'] = 'text/event-stream';
+    final response = await _client.send(request);
+
+    if (response.statusCode == 401 && await refreshSession()) {
+      yield* events();
+      return;
+    }
+    if (response.statusCode != 200) return;
+
+    String? eventName;
+    await for (final line in response.stream
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())) {
+      if (line.startsWith('event:')) {
+        eventName = line.substring(6).trim();
+      } else if (line.startsWith('data:')) {
+        try {
+          final decoded = jsonDecode(line.substring(5).trim());
+          if (decoded is Map) {
+            yield {
+              'type': eventName ?? 'message',
+              'data': Map<String, dynamic>.from(decoded),
+            };
+          }
+        } catch (_) {
+          // Ignore a malformed SSE message and keep the live stream connected.
+        }
+      } else if (line.isEmpty) {
+        eventName = null;
+      }
+    }
+  }
+
+  Map<String, String> _jsonHeaders() => const {
+        'content-type': 'application/json',
+        'accept': 'application/json',
+      };
+
+  Map<String, dynamic> _dataMap(http.Response response) {
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      _throwApi(response);
+    }
+    final data = _decode(response)['data'];
+    if (data is! Map) {
+      throw ApiException('INVALID_RESPONSE', 'Invalid API response');
+    }
+    return Map<String, dynamic>.from(data);
+  }
+
+  Map<String, dynamic> _decode(http.Response response) {
+    final decoded = jsonDecode(response.body.isEmpty ? '{}' : response.body);
+    if (decoded is! Map) {
+      throw ApiException('INVALID_RESPONSE', 'Invalid JSON response');
+    }
+    return Map<String, dynamic>.from(decoded);
+  }
+
+  Never _throwApi(http.Response response) {
+    try {
+      final error = _decode(response)['error'];
+      if (error is Map) {
+        throw ApiException(
+          '${error['code'] ?? 'HTTP_${response.statusCode}'}',
+          '${error['message'] ?? 'Request failed'}',
+          statusCode: response.statusCode,
+        );
+      }
+    } on FormatException {
+      // Fall through to a generic HTTP error when the response is not JSON.
+    }
+    throw ApiException(
+      'HTTP_${response.statusCode}',
+      'Request failed (${response.statusCode})',
+      statusCode: response.statusCode,
+    );
+  }
+
+  void close() => _client.close();
 }
