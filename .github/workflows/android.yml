@@ -2,7 +2,7 @@ name: Android
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/android-messaging-v013]
   pull_request:
   workflow_dispatch:
 
@@ -12,7 +12,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
 
@@ -48,6 +48,6 @@ jobs:
       - name: Upload ARM64 release APK
         uses: actions/upload-artifact@v4
         with:
-          name: whatsapp-responder-v0.1.2-arm64-stable
+          name: whatsapp-responder-v0.1.3-arm64-stable
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
