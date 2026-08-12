@@ -15,7 +15,7 @@ dependencies:
   sqflite: ^2.4.3
   path: ^1.9.1
   flutter_markdown_plus: ^1.0.12
-  file_picker: ^11.0.2
+  file_selector: ^1.1.0
 
 dev_dependencies:
   flutter_test:
