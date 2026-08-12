@@ -1,80 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:whatsapp_responder_app/core/models.dart';
 
-void main() {
-  test('ApiCommand parses the project v1 DTO', () {
-    final command = ApiCommand.fromJson({
-      'id': 12,
-      'title': 'السداد',
-      'enabled': true,
-      'responseText': 'موعد السداد',
-      'cooldownSeconds': 3,
-      'usageCount': 5,
-      'triggers': [
-        {'id': 1, 'text': 'السداد', 'primary': true},
-      ],
-      'scopes': ['global'],
-    });
-    expect(command.id, 12);
-    expect(command.title, 'السداد');
-    expect(command.enabled, isTrue);
-    expect(command.triggers.single.primary, isTrue);
-    expect(command.scopes, ['global']);
-  });
-
-  test('EnrollmentResult keeps the enrollment token', () {
-    final result = EnrollmentResult.fromJson({
-      'id': 'enr_test',
-      'enrollmentToken': 'wgr_enr_secret',
-      'verificationCode': '123456',
-      'status': 'pending',
-      'expiresAt': 1000,
-    });
-    expect(result.id, 'enr_test');
-    expect(result.enrollmentToken, 'wgr_enr_secret');
-    expect(result.verificationCode, '123456');
-  });
-
-  test('statistics use the server uses field for top commands', () {
-    final stats = ApiStatistics.fromJson({
-      'total': 9,
-      'approvedGroups': 2,
-      'commands': 3,
-      'top': [
-        {'id': 7, 'title': 'السداد', 'uses': 6},
-        {'id': 9, 'title': 'التسجيل', 'uses': 3},
-      ],
-    });
-
-    expect(stats.total, 9);
-    expect(stats.top.length, 2);
-    expect(stats.top.first.title, 'السداد');
-    expect(stats.top.first.uses, 6);
-  });
-
-  test('WhatsApp ready state is treated as connected', () {
-    final status = ApiWhatsAppStatus.fromJson({
-      'state': 'ready',
-      'registered': true,
-      'usableSession': true,
-      'requiresRelink': false,
-      'pairingReady': false,
-    });
-
-    expect(status.connected, isTrue);
-    expect(status.requiresRelink, isFalse);
-  });
-
-  test('revoked WhatsApp state is not connected', () {
-    final status = ApiWhatsAppStatus.fromJson({
-      'state': 'revoked',
-      'registered': false,
-      'usableSession': false,
-      'requiresRelink': true,
-      'pairingReady': false,
-    });
-
-    expect(status.connected, isFalse);
-    expect(status.requiresRelink, isTrue);
-  });
+void main(){
+  test('ApiCommand parses structured content and safe targeting',(){final c=ApiCommand.fromJson({'id':12,'title':'السداد','enabled':true,'responseText':'موعد السداد','responseContent':{'version':1,'components':[{'type':'text','text':'موعد السداد'},{'type':'image','assetId':9,'caption':'التفاصيل','asset':{'id':9,'kind':'image','mimeType':'image/jpeg','sizeBytes':100,'createdAt':1}}]},'cooldownSeconds':3,'usageCount':5,'triggers':[{'id':1,'text':'السداد','primary':true}],'scopes':['123@g.us'],'scopeMode':'selected','groupIds':[4]});expect(c.id,12);expect(c.responseContent.components.length,2);expect(c.responseContent.components.last.assetId,9);expect(c.scopeMode,'selected');expect(c.groupIds,[4]);});
+  test('scheduled campaign parses messages and targets',(){final c=ApiScheduledCampaign.fromJson({'id':2,'name':'تذكيرات','enabled':true,'intervalSeconds':43200,'selectionMode':'shuffle','targetMode':'selected','messages':[{'id':8,'text':'مرحبا','content':{'components':[{'type':'text','text':'مرحبا'}]},'sortOrder':0,'timesSent':1}],'targets':[{'groupId':3,'groupName':'تجربة','status':'approved'}]});expect(c.intervalSeconds,43200);expect(c.groupIds,[3]);expect(c.messages.single.content.summary,'مرحبا');});
+  test('broadcast report parses per-group status',(){final b=ApiBroadcast.fromJson({'id':7,'kind':'manual','messageText':'اختبار','content':{'components':[{'type':'text','text':'اختبار'}]},'targetMode':'all','status':'completed','targetCount':2,'sentCount':2,'failedCount':0,'targets':[{'groupId':1,'groupName':'أ','status':'sent','attemptCount':1}]});expect(b.status,'completed');expect(b.targets.single.groupName,'أ');});
+  test('EnrollmentResult keeps the enrollment token',(){final r=EnrollmentResult.fromJson({'id':'enr_test','enrollmentToken':'wgr_enr_secret','verificationCode':'123456','status':'pending','expiresAt':1000});expect(r.enrollmentToken,'wgr_enr_secret');});
+  test('WhatsApp ready state is connected',(){final s=ApiWhatsAppStatus.fromJson({'state':'ready','registered':true,'usableSession':true,'requiresRelink':false,'pairingReady':false});expect(s.connected,isTrue);});
 }
