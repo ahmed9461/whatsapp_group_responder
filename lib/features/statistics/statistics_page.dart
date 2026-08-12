@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+
 import '../../core/app_controller.dart';
+import '../dashboard/usage_analytics_card.dart';
 
 class StatisticsPage extends StatelessWidget {
   const StatisticsPage({super.key, required this.controller});
@@ -7,8 +9,6 @@ class StatisticsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final stats = controller.statistics;
-
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
@@ -16,7 +16,8 @@ class StatisticsPage extends StatelessWidget {
         backgroundColor: Colors.transparent,
         actions: [
           IconButton(
-            onPressed: controller.refreshStats,
+            tooltip: 'تحديث',
+            onPressed: controller.statsBusy ? null : controller.refreshStats,
             icon: const Icon(Icons.refresh_rounded),
           ),
         ],
@@ -26,49 +27,12 @@ class StatisticsPage extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Card(
-              child: ListTile(
-                leading: const CircleAvatar(
-                  child: Icon(Icons.insights_rounded),
-                ),
-                title: const Text('إجمالي استخدام آخر 24 ساعة'),
-                trailing: Text(
-                  '${stats.total}',
-                  style: Theme.of(context)
-                      .textTheme
-                      .headlineSmall
-                      ?.copyWith(fontWeight: FontWeight.bold),
-                ),
-              ),
+            UsageAnalyticsCard(
+              statistics: controller.statistics,
+              selectedPeriod: controller.statisticsPeriod,
+              loading: controller.statsBusy,
+              onPeriodChanged: controller.setStatisticsPeriod,
             ),
-            const SizedBox(height: 16),
-            Text(
-              'الأكثر استخدامًا',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 10),
-            if (stats.top.isEmpty)
-              const Card(
-                child: Padding(
-                  padding: EdgeInsets.all(20),
-                  child: Text('لا توجد بيانات بعد'),
-                ),
-              )
-            else
-              ...stats.top.map((item) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Card(
-                    child: ListTile(
-                      title: Text(item.title.isEmpty ? 'رد' : item.title),
-                      trailing: Text(
-                        '${item.uses}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ),
-                );
-              }),
           ],
         ),
       ),
