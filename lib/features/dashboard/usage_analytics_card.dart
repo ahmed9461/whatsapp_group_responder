@@ -68,7 +68,7 @@ class _UsageAnalyticsCardState extends State<UsageAnalyticsCard> {
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Icon(
-                    Icons.monitoring_rounded,
+                    Icons.insights_rounded,
                     color: theme.colorScheme.onPrimaryContainer,
                   ),
                 ),
