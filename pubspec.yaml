@@ -1,7 +1,7 @@
 name: whatsapp_responder_app
 description: Personal Android control app for WhatsApp Group Responder.
 publish_to: "none"
-version: 0.1.3+4
+version: 0.1.4+5
 
 environment:
   sdk: ">=3.12.0 <4.0.0"
