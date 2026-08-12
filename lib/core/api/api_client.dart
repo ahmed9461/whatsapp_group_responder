@@ -57,7 +57,7 @@ class ApiClient {
           body: jsonEncode({
             'deviceName': deviceName,
             'platform': 'android',
-            'appVersion': '0.1.3',
+            'appVersion': '0.1.5',
             'deviceInstanceId': deviceInstanceId,
           }),
         )
@@ -108,7 +108,10 @@ class ApiClient {
     return (await getList('/approvals')).map(ApiApproval.fromJson).toList();
   }
 
-  Future<Map<String, dynamic>> getStatistics() => getMap('/statistics');
+  Future<Map<String, dynamic>> getStatistics({String period = '24h'}) {
+    final safe = const {'24h', '7d', '30d'}.contains(period) ? period : '24h';
+    return getMap('/statistics?period=$safe');
+  }
 
   Future<Map<String, dynamic>> getSettings() => getMap('/settings');
 
@@ -304,6 +307,10 @@ class ApiClient {
     return ApiBroadcast.fromJson(
       await postMap('/broadcasts/$id/cancel', const {}),
     );
+  }
+
+  Future<void> deleteBroadcast(int id) async {
+    await _authorizedRequest('DELETE', '/broadcasts/$id');
   }
 
   Future<Map<String, dynamic>> getMap(String path) async {
