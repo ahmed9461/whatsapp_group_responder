@@ -36,6 +36,7 @@ class AppController extends ChangeNotifier {
   Timer? _fallbackRefresh;
   bool _liveRefreshRunning = false;
   bool _liveRefreshQueued = false;
+  Future<void>? _resumeInFlight;
 
   List<ApiGroup> get approvedGroups => groups.where((group) => group.approved).toList();
 
@@ -200,10 +201,30 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> decideApproval(int id, bool approve) async {
-    await api.decideApproval(id, approve);
+    try {
+      await api
+          .decideApproval(id, approve)
+          .timeout(const Duration(seconds: 8));
+    } catch (requestError) {
+      // A mobile connection may drop after the server has already committed the
+      // decision. Verify the authoritative pending list before reporting a
+      // failure, so the UI never spins forever or asks the owner to repeat a
+      // decision that already won.
+      try {
+        final latest = await api.getApprovals().timeout(const Duration(seconds: 5));
+        if (latest.any((item) => item.id == id)) {
+          throw requestError;
+        }
+        approvals = latest;
+        notifyListeners();
+        unawaited(_refreshAfterApprovalDecision());
+        return;
+      } catch (verificationError) {
+        if (verificationError == requestError) rethrow;
+        throw requestError;
+      }
+    }
 
-    // The server already accepted the decision. Reflect it immediately so the
-    // app never looks frozen while follow-up group metadata is being refreshed.
     approvals = approvals.where((item) => item.id != id).toList();
     notifyListeners();
     unawaited(_refreshAfterApprovalDecision());
@@ -222,6 +243,26 @@ class AppController extends ChangeNotifier {
       // The accepted decision is already authoritative. The normal SSE/fallback
       // refresh will reconcile metadata if this secondary refresh fails.
     }
+  }
+
+  Future<void> handleAppResumed() {
+    final running = _resumeInFlight;
+    if (running != null) return running;
+    final operation = _handleAppResumedOnce();
+    _resumeInFlight = operation;
+    return operation.whenComplete(() {
+      if (identical(_resumeInFlight, operation)) _resumeInFlight = null;
+    });
+  }
+
+  Future<void> _handleAppResumedOnce() async {
+    if (!isLinked) return;
+
+    // Android can suspend timers/SSE while the app is in the background. On
+    // resume, rebuild the live stream and immediately reconcile server state.
+    // The API client handles access-token renewal without requiring re-linking.
+    _startLiveUpdates();
+    await refreshAll(silent: true);
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {
