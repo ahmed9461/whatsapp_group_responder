@@ -205,24 +205,24 @@ class AppController extends ChangeNotifier {
       await api
           .decideApproval(id, approve)
           .timeout(const Duration(seconds: 8));
-    } catch (requestError) {
+    } catch (requestError, requestStack) {
       // A mobile connection may drop after the server has already committed the
       // decision. Verify the authoritative pending list before reporting a
       // failure, so the UI never spins forever or asks the owner to repeat a
       // decision that already won.
+      List<ApiApproval> latest;
       try {
-        final latest = await api.getApprovals().timeout(const Duration(seconds: 5));
-        if (latest.any((item) => item.id == id)) {
-          throw requestError;
-        }
-        approvals = latest;
-        notifyListeners();
-        unawaited(_refreshAfterApprovalDecision());
-        return;
-      } catch (verificationError) {
-        if (verificationError == requestError) rethrow;
-        throw requestError;
+        latest = await api.getApprovals().timeout(const Duration(seconds: 5));
+      } catch (_) {
+        Error.throwWithStackTrace(requestError, requestStack);
       }
+      if (latest.any((item) => item.id == id)) {
+        Error.throwWithStackTrace(requestError, requestStack);
+      }
+      approvals = latest;
+      notifyListeners();
+      unawaited(_refreshAfterApprovalDecision());
+      return;
     }
 
     approvals = approvals.where((item) => item.id != id).toList();
