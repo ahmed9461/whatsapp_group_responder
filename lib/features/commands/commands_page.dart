@@ -202,6 +202,7 @@ class CommandEditorPage extends StatefulWidget {
 
 class _CommandEditorPageState extends State<CommandEditorPage> {
   late final TextEditingController _trigger;
+  final _aliasesKey = GlobalKey<_AliasesEditorState>();
   late int _cooldown;
   late bool _enabled;
   late String _scopeMode;
@@ -384,6 +385,7 @@ class _CommandEditorPageState extends State<CommandEditorPage> {
                 if (editing) ...[
                   const SizedBox(height: 16),
                   _AliasesEditor(
+                    key: _aliasesKey,
                     controller: widget.controller,
                     command: widget.command!,
                   ),
@@ -456,6 +458,10 @@ class _CommandEditorPageState extends State<CommandEditorPage> {
             'enabled': _enabled,
           },
         );
+        // If the owner typed a new alias and pressed the main Save button
+        // without tapping the small + button first, commit it as part of the
+        // same save action instead of silently discarding it.
+        await _aliasesKey.currentState?.savePendingAlias();
       } else {
         await widget.controller.api.createCommand(
           trigger: _trigger.text.trim(),
@@ -516,7 +522,11 @@ class _CommandEditorPageState extends State<CommandEditorPage> {
 }
 
 class _AliasesEditor extends StatefulWidget {
-  const _AliasesEditor({required this.controller, required this.command});
+  const _AliasesEditor({
+    super.key,
+    required this.controller,
+    required this.command,
+  });
 
   final AppController controller;
   final ApiCommand command;
@@ -528,6 +538,7 @@ class _AliasesEditor extends StatefulWidget {
 class _AliasesEditorState extends State<_AliasesEditor> {
   final _alias = TextEditingController();
   late ApiCommand _command;
+  bool _busy = false;
 
   @override
   void initState() {
@@ -543,10 +554,11 @@ class _AliasesEditorState extends State<_AliasesEditor> {
 
   @override
   Widget build(BuildContext context) {
+    final aliases = _command.triggers.where((trigger) => !trigger.primary).toList();
     return ExpansionTile(
       tilePadding: EdgeInsets.zero,
       title: const Text('الأسماء البديلة'),
-      subtitle: Text('${_command.triggers.length - 1} اسم بديل'),
+      subtitle: Text('${aliases.length} اسم بديل'),
       children: [
         Wrap(
           spacing: 8,
@@ -555,7 +567,7 @@ class _AliasesEditorState extends State<_AliasesEditor> {
               .map(
                 (trigger) => InputChip(
                   label: Text(trigger.text),
-                  onDeleted: trigger.primary ? null : () => _remove(trigger),
+                  onDeleted: trigger.primary || _busy ? null : () => _remove(trigger),
                 ),
               )
               .toList(),
@@ -566,13 +578,25 @@ class _AliasesEditorState extends State<_AliasesEditor> {
             Expanded(
               child: TextField(
                 controller: _alias,
-                decoration: const InputDecoration(labelText: 'اسم بديل جديد'),
+                enabled: !_busy,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) async => _add(),
+                decoration: const InputDecoration(
+                  labelText: 'اسم بديل جديد',
+                  helperText: 'اضغط + أو «حفظ التعديلات» وسيتم حفظ الاسم.',
+                ),
               ),
             ),
             const SizedBox(width: 8),
             IconButton.filled(
-              onPressed: _add,
-              icon: const Icon(Icons.add_rounded),
+              onPressed: _busy ? null : _add,
+              icon: _busy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.add_rounded),
             ),
           ],
         ),
@@ -580,19 +604,54 @@ class _AliasesEditorState extends State<_AliasesEditor> {
     );
   }
 
-  Future<void> _add() async {
+  Future<void> savePendingAlias() async {
+    if (_alias.text.trim().isEmpty) return;
+    await _add(showSuccess: false);
+  }
+
+  Future<void> _add({bool showSuccess = true}) async {
     final value = _alias.text.trim();
-    if (value.isEmpty) return;
-    _command = await widget.controller.api.addAlias(_command.id, value);
-    _alias.clear();
-    if (mounted) setState(() {});
+    if (value.isEmpty || _busy) return;
+    setState(() => _busy = true);
+    try {
+      _command = await widget.controller.api.addAlias(_command.id, value);
+      _alias.clear();
+      await widget.controller.refreshCommands();
+      if (mounted && showSuccess) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم حفظ الاسم البديل.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر حفظ الاسم البديل: $error')),
+        );
+      }
+      rethrow;
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _remove(ApiTrigger trigger) async {
-    _command = await widget.controller.api.removeAlias(
-      _command.id,
-      trigger.id,
-    );
-    if (mounted) setState(() {});
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      _command = await widget.controller.api.removeAlias(
+        _command.id,
+        trigger.id,
+      );
+      await widget.controller.refreshCommands();
+      if (mounted) setState(() {});
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر حذف الاسم البديل: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 }
