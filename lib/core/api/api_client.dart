@@ -19,6 +19,7 @@ class ApiClient {
   final SecureStore secureStore;
   final http.Client _client;
   String _baseUrl;
+  Future<bool>? _refreshInFlight;
 
   String get baseUrl => _baseUrl;
 
@@ -57,7 +58,7 @@ class ApiClient {
           body: jsonEncode({
             'deviceName': deviceName,
             'platform': 'android',
-            'appVersion': '0.1.5',
+            'appVersion': '0.1.6',
             'deviceInstanceId': deviceInstanceId,
           }),
         )
@@ -394,7 +395,18 @@ class ApiClient {
     return response;
   }
 
-  Future<bool> refreshSession() async {
+  Future<bool> refreshSession() {
+    final running = _refreshInFlight;
+    if (running != null) return running;
+
+    final operation = _refreshSessionOnce();
+    _refreshInFlight = operation;
+    return operation.whenComplete(() {
+      if (identical(_refreshInFlight, operation)) _refreshInFlight = null;
+    });
+  }
+
+  Future<bool> _refreshSessionOnce() async {
     final refreshToken = await secureStore.refreshToken;
     if (refreshToken == null) return false;
 
@@ -412,9 +424,15 @@ class ApiClient {
         refreshToken: tokens.refreshToken,
       );
       return true;
-    } on ApiException {
-      await secureStore.clearProjectSession();
-      return false;
+    } on ApiException catch (error) {
+      // Only a definitive invalid/revoked refresh token should unlink the app.
+      // Rate limits and other server errors must keep the durable refresh token
+      // so a later retry can recover automatically.
+      if (error.statusCode == 401) {
+        await secureStore.clearProjectSession();
+        return false;
+      }
+      rethrow;
     }
   }
 
