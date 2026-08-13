@@ -8,10 +8,8 @@ import 'package:whatsapp_responder_app/core/api/api_exception.dart';
 import 'package:whatsapp_responder_app/core/storage/secure_store.dart';
 
 class _MemorySecureStore extends SecureStore {
-  _MemorySecureStore({this.access = 'expired-access', this.refresh = 'refresh-1'});
-
-  String? access;
-  String? refresh;
+  String? access = 'expired-access';
+  String? refresh = 'refresh-1';
 
   @override
   Future<String?> get accessToken async => access;
