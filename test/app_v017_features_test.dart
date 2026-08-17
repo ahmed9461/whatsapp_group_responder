@@ -4,12 +4,14 @@ import 'package:whatsapp_responder_app/core/models.dart';
 
 void main() {
   group('approval timeout parsing', () {
-    test('accepts seconds, minutes, hours, and Arabic labels', () {
+    test('accepts seconds, minutes, hours, Arabic labels, and Arabic digits', () {
       expect(parseApprovalTimeoutInput('45'), 45);
       expect(parseApprovalTimeoutInput('2m'), 120);
       expect(parseApprovalTimeoutInput('10 دقائق'), 600);
       expect(parseApprovalTimeoutInput('1h'), 3600);
       expect(parseApprovalTimeoutInput('30 ثانية'), 30);
+      expect(parseApprovalTimeoutInput('١٠ دقائق'), 600);
+      expect(parseApprovalTimeoutInput('۳۰ ثانية'), 30);
     });
 
     test('enforces the backend range of 5 seconds to 24 hours', () {
