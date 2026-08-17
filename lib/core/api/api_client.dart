@@ -58,7 +58,7 @@ class ApiClient {
           body: jsonEncode({
             'deviceName': deviceName,
             'platform': 'android',
-            'appVersion': '0.1.6',
+            'appVersion': '0.1.7',
             'deviceInstanceId': deviceInstanceId,
           }),
         )
@@ -189,6 +189,10 @@ class ApiClient {
 
   Future<Map<String, dynamic>> setMaintenance(bool enabled) {
     return patchMap('/settings', {'maintenanceMode': enabled});
+  }
+
+  Future<Map<String, dynamic>> setApprovalTimeoutSeconds(int seconds) {
+    return patchMap('/settings', {'approvalTimeoutSeconds': seconds});
   }
 
   Future<ApiMediaAsset> uploadMedia({

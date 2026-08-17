@@ -58,7 +58,7 @@ class _ContentComposerState extends State<ContentComposer> {
         ),
         const SizedBox(height: 8),
         Text(
-          'أضف النصوص والوسائط بالترتيب الذي تريد أن تصل به. يمكن إضافة أكثر من صورة أو مقطع.',
+          'أضف النصوص والصور والفيديو والصوت والملفات بالترتيب الذي تريد أن تصل به. يمكن إضافة أكثر من عنصر.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 12),
@@ -87,13 +87,18 @@ class _ContentComposerState extends State<ContentComposer> {
               'رسالة صوتية',
               () => _addMedia('voice'),
             ),
+            _addButton(
+              Icons.attach_file_rounded,
+              'ملف',
+              () => _addMedia('file'),
+            ),
           ],
         ),
         if (_uploading) ...[
           const SizedBox(height: 12),
           const LinearProgressIndicator(),
           const SizedBox(height: 4),
-          const Text('جاري رفع الوسائط إلى السيرفر…'),
+          const Text('جاري رفع المحتوى إلى السيرفر…'),
         ],
         const SizedBox(height: 12),
         if (_items.isEmpty)
@@ -128,6 +133,7 @@ class _ContentComposerState extends State<ContentComposer> {
       'video' => 'فيديو',
       'audio' => 'ملف صوتي',
       'voice' => 'رسالة صوتية',
+      'file' => 'ملف',
       _ => item.type,
     };
     final icon = switch (item.type) {
@@ -136,6 +142,7 @@ class _ContentComposerState extends State<ContentComposer> {
       'video' => Icons.videocam_rounded,
       'audio' => Icons.audio_file_rounded,
       'voice' => Icons.mic_rounded,
+      'file' => Icons.attach_file_rounded,
       _ => Icons.attachment_rounded,
     };
     final subtitle = item.type == 'text'
@@ -250,13 +257,21 @@ class _ContentComposerState extends State<ContentComposer> {
 
     final controller = TextEditingController(text: item.caption ?? '');
     final isAudio = item.type == 'audio' || item.type == 'voice';
+    final isFile = item.type == 'file';
     final caption = await _textDialog(
-      title: isAudio ? 'وصف بعد الصوت' : 'الوصف',
+      title: isAudio
+          ? 'وصف بعد الصوت'
+          : isFile
+              ? 'وصف الملف'
+              : 'الوصف',
       controller: controller,
       label: isAudio
           ? 'وصف اختياري يرسل بعد الصوت'
-          : 'وصف اختياري',
-      maxLength: item.type == 'image' || item.type == 'video' ? 1024 : 3500,
+          : isFile
+              ? 'وصف اختياري للملف'
+              : 'وصف اختياري',
+      maxLength:
+          item.type == 'image' || item.type == 'video' || isFile ? 1024 : 3500,
       allowEmpty: true,
     );
     if (caption == null) return;
@@ -277,32 +292,40 @@ class _ContentComposerState extends State<ContentComposer> {
 
   Future<void> _addMedia(String componentType) async {
     final kind = componentType == 'voice' ? 'audio' : componentType;
-    final extensions = switch (kind) {
-      'image' => const ['jpg', 'jpeg', 'png', 'webp'],
-      'video' => const ['mp4', 'mov'],
-      _ => const ['ogg', 'mp3', 'm4a', 'aac', 'wav'],
-    };
-    final mimeTypes = switch (kind) {
-      'image' => const ['image/jpeg', 'image/png', 'image/webp'],
-      'video' => const ['video/mp4', 'video/quicktime'],
-      _ => const [
-          'audio/ogg',
-          'audio/mpeg',
-          'audio/mp4',
-          'audio/aac',
-          'audio/wav',
-        ],
-    };
+    final XFile? file;
 
-    final file = await openFile(
-      acceptedTypeGroups: [
-        XTypeGroup(
-          label: componentType == 'voice' ? 'voice' : kind,
-          extensions: extensions,
-          mimeTypes: mimeTypes,
-        ),
-      ],
-    );
+    if (componentType == 'file') {
+      // Let Android's native picker expose any document type. The server stores
+      // documents as opaque bytes and enforces the configured file-size limit.
+      file = await openFile();
+    } else {
+      final extensions = switch (kind) {
+        'image' => const ['jpg', 'jpeg', 'png', 'webp'],
+        'video' => const ['mp4', 'mov'],
+        _ => const ['ogg', 'mp3', 'm4a', 'aac', 'wav'],
+      };
+      final mimeTypes = switch (kind) {
+        'image' => const ['image/jpeg', 'image/png', 'image/webp'],
+        'video' => const ['video/mp4', 'video/quicktime'],
+        _ => const [
+            'audio/ogg',
+            'audio/mpeg',
+            'audio/mp4',
+            'audio/aac',
+            'audio/wav',
+          ],
+      };
+
+      file = await openFile(
+        acceptedTypeGroups: [
+          XTypeGroup(
+            label: componentType == 'voice' ? 'voice' : kind,
+            extensions: extensions,
+            mimeTypes: mimeTypes,
+          ),
+        ],
+      );
+    }
     if (file == null) return;
 
     try {
@@ -314,20 +337,31 @@ class _ContentComposerState extends State<ContentComposer> {
       final asset = await widget.controller.api.uploadMedia(
         bytes: bytes,
         kind: kind,
-        mimeType: _mimeFor(file.name),
+        mimeType: file.mimeType?.trim().isNotEmpty == true
+            ? file.mimeType!
+            : _mimeFor(file.name),
         fileName: _safeHeaderFileName(file.name),
       );
       if (!mounted) return;
 
       final controller = TextEditingController();
       final isAudio = componentType == 'audio' || componentType == 'voice';
+      final isFile = componentType == 'file';
       final caption = await _textDialog(
-        title: isAudio ? 'وصف اختياري للصوت' : 'وصف اختياري',
+        title: isAudio
+            ? 'وصف اختياري للصوت'
+            : isFile
+                ? 'وصف اختياري للملف'
+                : 'وصف اختياري',
         controller: controller,
         label: isAudio
             ? 'يرسل الوصف كنص بعد الصوت'
-            : 'الوصف',
-        maxLength: componentType == 'image' || componentType == 'video'
+            : isFile
+                ? 'الوصف الذي يظهر مع الملف'
+                : 'الوصف',
+        maxLength: componentType == 'image' ||
+                componentType == 'video' ||
+                componentType == 'file'
             ? 1024
             : 3500,
         allowEmpty: true,
@@ -353,7 +387,7 @@ class _ContentComposerState extends State<ContentComposer> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر رفع الوسائط: $error')),
+          SnackBar(content: Text('تعذر رفع المحتوى: $error')),
         );
       }
     } finally {
@@ -362,7 +396,8 @@ class _ContentComposerState extends State<ContentComposer> {
   }
 
   String _mimeFor(String name) {
-    final extension = name.split('.').last.toLowerCase();
+    final parts = name.split('.');
+    final extension = parts.length > 1 ? parts.last.toLowerCase() : '';
     return switch (extension) {
       'jpg' || 'jpeg' => 'image/jpeg',
       'png' => 'image/png',
@@ -374,6 +409,19 @@ class _ContentComposerState extends State<ContentComposer> {
       'm4a' => 'audio/mp4',
       'aac' => 'audio/aac',
       'wav' => 'audio/wav',
+      'pdf' => 'application/pdf',
+      'txt' => 'text/plain',
+      'csv' => 'text/csv',
+      'json' => 'application/json',
+      'zip' => 'application/zip',
+      'rar' => 'application/vnd.rar',
+      '7z' => 'application/x-7z-compressed',
+      'doc' => 'application/msword',
+      'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'xls' => 'application/vnd.ms-excel',
+      'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'ppt' => 'application/vnd.ms-powerpoint',
+      'pptx' => 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       _ => 'application/octet-stream',
     };
   }

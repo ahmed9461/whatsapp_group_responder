@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+
 import '../../core/app_controller.dart';
+import '../../core/approval_timeout.dart';
 import '../ai/deepseek_client.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -18,6 +20,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _loadingAi = true;
   bool _testing = false;
   bool _showKey = false;
+  bool _savingApprovalTimeout = false;
 
   @override
   void initState() {
@@ -43,6 +46,10 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final maintenance = widget.controller.settings['maintenanceMode'] == true;
+    final approvalTimeout =
+        int.tryParse('${widget.controller.settings['approvalTimeoutSeconds'] ?? 30}') ??
+            30;
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
@@ -81,6 +88,62 @@ class _SettingsPageState extends State<SettingsPage> {
                       await widget.controller.api.setMaintenance(value);
                       await widget.controller.refreshAll();
                     },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text('الموافقات', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 10),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const CircleAvatar(
+                      child: Icon(Icons.timer_outlined),
+                    ),
+                    title: const Text('مدة انتظار قرار الموافقة'),
+                    subtitle: const Text(
+                      'تطبق على طلبات الانضمام الجديدة. الطلبات المفتوحة تحتفظ بمدتها الحالية.',
+                    ),
+                    trailing: _savingApprovalTimeout
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2.3),
+                          )
+                        : Text(
+                            formatApprovalTimeout(approvalTimeout),
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _timeoutChip(30, '30 ثانية', approvalTimeout),
+                      _timeoutChip(60, 'دقيقة', approvalTimeout),
+                      _timeoutChip(300, '5 دقائق', approvalTimeout),
+                      _timeoutChip(600, '10 دقائق', approvalTimeout),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed:
+                        _savingApprovalTimeout ? null : _showCustomApprovalTimeout,
+                    icon: const Icon(Icons.edit_rounded),
+                    label: const Text('إدخال مدة مخصصة'),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'القيمة المسموحة من 5 ثوانٍ إلى 24 ساعة. أمثلة: 45، 2m، 10 دقائق، 1h.',
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
               ),
@@ -201,6 +264,91 @@ class _SettingsPageState extends State<SettingsPage> {
         ],
       ),
     );
+  }
+
+  Widget _timeoutChip(int seconds, String label, int current) {
+    return ChoiceChip(
+      label: Text(label),
+      selected: current == seconds,
+      onSelected: _savingApprovalTimeout
+          ? null
+          : (_) => _setApprovalTimeout(seconds),
+    );
+  }
+
+  Future<void> _showCustomApprovalTimeout() async {
+    final controller = TextEditingController();
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('مدة موافقة مخصصة'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (value) => Navigator.pop(context, value),
+          decoration: const InputDecoration(
+            labelText: 'المدة',
+            hintText: 'مثال: 45 أو 2m أو 10 دقائق أو 1h',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value == null) return;
+
+    final seconds = parseApprovalTimeoutInput(value);
+    if (seconds == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('المدة غير صحيحة. استخدم قيمة بين 5 ثوانٍ و24 ساعة.'),
+          ),
+        );
+      }
+      return;
+    }
+    await _setApprovalTimeout(seconds);
+  }
+
+  Future<void> _setApprovalTimeout(int seconds) async {
+    if (_savingApprovalTimeout) return;
+    setState(() => _savingApprovalTimeout = true);
+    try {
+      await widget.controller.api.patchMap(
+        '/settings',
+        {'approvalTimeoutSeconds': seconds},
+      );
+      await widget.controller.refreshAll(silent: true);
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'تم ضبط مدة الموافقة على ${formatApprovalTimeout(seconds)}.',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر تحديث مدة الموافقة: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingApprovalTimeout = false);
+    }
   }
 
   Future<void> _saveAi() async {

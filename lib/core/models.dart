@@ -115,6 +115,9 @@ class ApiMessageContent {
         'audio' => item.caption?.trim().isNotEmpty == true
             ? '🎵 صوت — ${item.caption}'
             : '🎵 صوت',
+        'file' => item.caption?.trim().isNotEmpty == true
+            ? '📎 ملف — ${item.caption}'
+            : '📎 ملف',
         _ => item.type,
       };
     }).join('\n');
