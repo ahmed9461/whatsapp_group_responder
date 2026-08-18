@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
@@ -295,8 +297,6 @@ class _ContentComposerState extends State<ContentComposer> {
     final XFile? file;
 
     if (componentType == 'file') {
-      // Let Android's native picker expose any document type. The server stores
-      // documents as opaque bytes and enforces the configured file-size limit.
       file = await openFile();
     } else {
       final extensions = switch (kind) {
@@ -340,7 +340,7 @@ class _ContentComposerState extends State<ContentComposer> {
         mimeType: file.mimeType?.trim().isNotEmpty == true
             ? file.mimeType!
             : _mimeFor(file.name),
-        fileName: _safeHeaderFileName(file.name),
+        fileName: _encodedHeaderFileName(file.name),
       );
       if (!mounted) return;
 
@@ -369,9 +369,7 @@ class _ContentComposerState extends State<ContentComposer> {
       if (caption == null) {
         try {
           await widget.controller.api.deleteMedia(asset.id);
-        } catch (_) {
-          // The unused media cleanup job remains a safe fallback.
-        }
+        } catch (_) {}
         return;
       }
 
@@ -426,11 +424,9 @@ class _ContentComposerState extends State<ContentComposer> {
     };
   }
 
-  String _safeHeaderFileName(String name) {
-    final sanitized = name.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
-    if (sanitized.isEmpty) return 'media';
-    if (sanitized.length <= 120) return sanitized;
-    return sanitized.substring(sanitized.length - 120);
+  String _encodedHeaderFileName(String name) {
+    final value = name.trim().isEmpty ? 'media' : name.trim();
+    return 'b64:${base64UrlEncode(utf8.encode(value))}';
   }
 
   Future<String?> _textDialog({
