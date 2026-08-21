@@ -13,7 +13,6 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  late final TextEditingController _server;
   final _deepSeekKey = TextEditingController();
   String _model = 'deepseek-v4-pro';
   bool _thinking = false;
@@ -25,7 +24,6 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void initState() {
     super.initState();
-    _server = TextEditingController(text: widget.controller.serverUrl);
     _loadAi();
   }
 
@@ -38,7 +36,6 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   void dispose() {
-    _server.dispose();
     _deepSeekKey.dispose();
     super.dispose();
   }
@@ -66,18 +63,16 @@ class _SettingsPageState extends State<SettingsPage> {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  TextField(
-                    controller: _server,
-                    textDirection: TextDirection.ltr,
-                    decoration: const InputDecoration(labelText: 'عنوان API'),
-                  ),
-                  const SizedBox(height: 10),
-                  FilledButton(
-                    onPressed: () async {
-                      await widget.controller.setServerUrl(_server.text);
-                      await widget.controller.refreshAll();
-                    },
-                    child: const Text('حفظ واختبار الاتصال'),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const CircleAvatar(
+                      child: Icon(Icons.cloud_done_rounded),
+                    ),
+                    title: const Text('الاتصال بالخدمة'),
+                    subtitle: const Text(
+                      'تلقائي وآمن. لا يحتاج المستخدم لإدخال عنوان API أو إعداد Tailscale.',
+                    ),
+                    trailing: const Icon(Icons.lock_rounded),
                   ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
@@ -325,10 +320,7 @@ class _SettingsPageState extends State<SettingsPage> {
     if (_savingApprovalTimeout) return;
     setState(() => _savingApprovalTimeout = true);
     try {
-      await widget.controller.api.patchMap(
-        '/settings',
-        {'approvalTimeoutSeconds': seconds},
-      );
+      await widget.controller.api.setApprovalTimeoutSeconds(seconds);
       await widget.controller.refreshAll(silent: true);
       if (mounted) {
         setState(() {});
