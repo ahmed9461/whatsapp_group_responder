@@ -7,7 +7,7 @@ void main() {
     final source = File('lib/core/app_controller.dart').readAsStringSync();
     expect(source, contains("status['device']"));
     expect(source, contains("deviceAccess['permissions']"));
-    expect(source, contains("bool can(String permission)"));
+    expect(source, contains('bool can(String permission)'));
     expect(source, contains("deviceAccess['groupScopeMode']"));
     expect(source, contains("deviceAccess['groupIds']"));
     expect(source, contains("can('commands.read')"));
