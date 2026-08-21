@@ -6,31 +6,28 @@ class PreferencesStore {
   static const _deepSeekModel = 'deepseek_model';
   static const _deepSeekThinking = 'deepseek_thinking';
 
+  /// Stable public HTTPS entrypoint. Android users never type or manage it.
+  /// The backend itself remains bound to loopback behind the HTTPS proxy.
   static const defaultServerUrl =
       'https://vmi3452413.tailc13979.ts.net/api/v1';
-  static const _legacyLocalServerUrl = 'http://127.0.0.1:8787/api/v1';
 
   final SharedPreferencesAsync _prefs = SharedPreferencesAsync();
 
   Future<String> getServerUrl() async {
+    // v0.2.0 intentionally stops trusting previously entered URLs. This avoids
+    // stale private/Tailscale-only addresses and keeps onboarding deterministic.
     final saved = (await _prefs.getString(_serverUrl))?.trim();
-    if (saved == null || saved.isEmpty) {
-      return defaultServerUrl;
-    }
-
-    // Migrate installs that were previously pointed at the Termux-local API.
-    // The server has moved to the private Tailscale HTTPS endpoint, while the
-    // backend itself continues listening safely on 127.0.0.1 behind Serve.
-    if (saved == _legacyLocalServerUrl) {
+    if (saved != defaultServerUrl) {
       await _prefs.setString(_serverUrl, defaultServerUrl);
-      return defaultServerUrl;
     }
-
-    return saved;
+    return defaultServerUrl;
   }
 
-  Future<void> setServerUrl(String value) =>
-      _prefs.setString(_serverUrl, value.trim());
+  Future<void> setServerUrl(String value) async {
+    // Kept only for backwards source compatibility. Normal UI has no server URL
+    // field and the app always returns to the pinned endpoint on next launch.
+    await _prefs.setString(_serverUrl, defaultServerUrl);
+  }
 
   Future<String> getThemeMode() async =>
       await _prefs.getString(_theme) ?? 'system';
