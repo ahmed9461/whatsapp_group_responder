@@ -58,7 +58,7 @@ class ApiClient {
           body: jsonEncode({
             'deviceName': deviceName,
             'platform': 'android',
-            'appVersion': '0.1.7',
+            'appVersion': '0.2.0',
             'deviceInstanceId': deviceInstanceId,
           }),
         )
