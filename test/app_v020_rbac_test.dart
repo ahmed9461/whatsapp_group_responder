@@ -30,11 +30,12 @@ void main() {
     expect(controller.deviceGroupIds, [2, 9]);
   });
 
-  test('normal enrollment UI has no editable API address or bot token', () {
+  test('normal enrollment UI has no editable API address or embedded bot secret', () {
     final source = File('lib/features/enrollment/enrollment_page.dart')
         .readAsStringSync();
     expect(source, isNot(contains("labelText: 'عنوان API'")));
-    expect(source, isNot(contains('Bot Token داخل التطبيق')));
+    expect(source, isNot(contains('BOT_TOKEN=')));
+    expect(source, isNot(contains('api.telegram.org/bot')));
     expect(source, contains('طلب الربط عبر Telegram'));
   });
 
