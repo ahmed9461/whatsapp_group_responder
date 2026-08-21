@@ -27,6 +27,33 @@ class DashboardPage extends StatelessWidget {
             _ => whatsapp.registered ? 'غير متصل حاليًا' : 'غير مرتبط',
           };
 
+    final metrics = <Widget>[
+      if (controller.can('commands.read'))
+        _Metric(
+          title: 'الردود',
+          value: '${controller.commands.length}',
+          icon: Icons.quickreply_rounded,
+        ),
+      if (controller.can('groups.read'))
+        _Metric(
+          title: 'المجموعات المتاحة',
+          value: '${controller.groups.length}',
+          icon: Icons.groups_rounded,
+        ),
+      if (controller.can('approvals.read'))
+        _Metric(
+          title: 'طلبات معلقة',
+          value: '${controller.approvals.length}',
+          icon: Icons.hourglass_top_rounded,
+        ),
+      if (controller.can('statistics.read'))
+        _Metric(
+          title: 'استخدام ${stats.periodLabel}',
+          value: '${stats.total}',
+          icon: Icons.insights_rounded,
+        ),
+    ];
+
     return RefreshIndicator(
       onRefresh: controller.refreshAll,
       child: ListView(
@@ -67,44 +94,45 @@ class DashboardPage extends StatelessWidget {
               subtitle: Text(statusText),
             ),
           ),
-          const SizedBox(height: 16),
-          GridView.count(
-            crossAxisCount: MediaQuery.sizeOf(context).width > 600 ? 4 : 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 1.35,
-            children: [
-              _Metric(
-                title: 'الردود',
-                value: '${controller.commands.length}',
-                icon: Icons.quickreply_rounded,
+          const SizedBox(height: 12),
+          Card(
+            child: ListTile(
+              contentPadding: const EdgeInsets.all(16),
+              leading: const CircleAvatar(
+                child: Icon(Icons.admin_panel_settings_rounded),
               ),
-              _Metric(
-                title: 'المجموعات',
-                value: '${controller.groups.length}',
-                icon: Icons.groups_rounded,
+              title: Text(
+                controller.deviceRoleLabel,
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
-              _Metric(
-                title: 'طلبات معلقة',
-                value: '${controller.approvals.length}',
-                icon: Icons.hourglass_top_rounded,
+              subtitle: Text(
+                controller.deviceGroupScopeMode == 'all'
+                    ? 'صلاحية هذا الجهاز على كل المجموعات التي سمح بها المالك.'
+                    : 'صلاحية هذا الجهاز مقيدة على ${controller.deviceGroupIds.length} مجموعة.',
               ),
-              _Metric(
-                title: 'استخدام ${stats.periodLabel}',
-                value: '${stats.total}',
-                icon: Icons.insights_rounded,
-              ),
-            ],
+            ),
           ),
-          const SizedBox(height: 16),
-          UsageAnalyticsCard(
-            statistics: stats,
-            selectedPeriod: controller.statisticsPeriod,
-            loading: controller.statsBusy,
-            onPeriodChanged: controller.setStatisticsPeriod,
-          ),
+          if (metrics.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            GridView.count(
+              crossAxisCount: MediaQuery.sizeOf(context).width > 600 ? 4 : 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              childAspectRatio: 1.35,
+              children: metrics,
+            ),
+          ],
+          if (controller.can('statistics.read')) ...[
+            const SizedBox(height: 16),
+            UsageAnalyticsCard(
+              statistics: stats,
+              selectedPeriod: controller.statisticsPeriod,
+              loading: controller.statsBusy,
+              onPeriodChanged: controller.setStatisticsPeriod,
+            ),
+          ],
           if (controller.error != null) ...[
             const SizedBox(height: 16),
             Card(

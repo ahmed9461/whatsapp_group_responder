@@ -18,7 +18,7 @@ class AppController extends ChangeNotifier {
   bool statsBusy = false;
   String? error;
   ThemeMode themeMode = ThemeMode.system;
-  String serverUrl = 'https://vmi3452413.tailc13979.ts.net/api/v1';
+  String serverUrl = PreferencesStore.defaultServerUrl;
   String statisticsPeriod = '24h';
 
   Map<String, dynamic> status = {};
@@ -38,7 +38,42 @@ class AppController extends ChangeNotifier {
   bool _liveRefreshQueued = false;
   Future<void>? _resumeInFlight;
 
-  List<ApiGroup> get approvedGroups => groups.where((group) => group.approved).toList();
+  Map<String, dynamic> get deviceAccess {
+    final raw = status['device'];
+    return raw is Map ? Map<String, dynamic>.from(raw) : const {};
+  }
+
+  Set<String> get permissions => ((deviceAccess['permissions'] as List?) ?? const [])
+      .map((item) => '$item')
+      .where((item) => item.isNotEmpty)
+      .toSet();
+
+  bool can(String permission) => permissions.contains(permission);
+
+  String get deviceRole => '${deviceAccess['role'] ?? 'unknown'}';
+
+  String get deviceRoleLabel {
+    final server = '${deviceAccess['roleLabel'] ?? ''}'.trim();
+    if (server.isNotEmpty) return server;
+    return switch (deviceRole) {
+      'owner' => '👑 مالك',
+      'content' => '🧰 مدير محتوى',
+      'replies' => '✏️ محرر الردود',
+      'viewer' => '👁️ مشاهدة فقط',
+      _ => 'جهاز مرتبط',
+    };
+  }
+
+  String get deviceGroupScopeMode =>
+      '${deviceAccess['groupScopeMode'] ?? 'all'}';
+
+  List<int> get deviceGroupIds => ((deviceAccess['groupIds'] as List?) ?? const [])
+      .map((item) => item is num ? item.toInt() : int.tryParse('$item') ?? 0)
+      .where((item) => item > 0)
+      .toList();
+
+  List<ApiGroup> get approvedGroups =>
+      groups.where((group) => group.approved).toList();
 
   Future<void> initialize() async {
     serverUrl = await preferences.getServerUrl();
@@ -60,7 +95,8 @@ class AppController extends ChangeNotifier {
     final existing = await secureStore.deviceInstanceId;
     if (existing != null && existing.length >= 12) return existing;
     final random = Random.secure();
-    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const chars =
+        'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     final value =
         'android-${List.generate(32, (_) => chars[random.nextInt(chars.length)]).join()}';
     await secureStore.saveDeviceInstanceId(value);
@@ -68,7 +104,9 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> setServerUrl(String value) async {
-    serverUrl = value.trim();
+    // v0.2.0 uses one pinned public HTTPS endpoint. Keep this method only so
+    // older callers cannot accidentally persist a stale/private server URL.
+    serverUrl = PreferencesStore.defaultServerUrl;
     await preferences.setServerUrl(serverUrl);
     api.setBaseUrl(serverUrl);
     notifyListeners();
@@ -110,31 +148,92 @@ class AppController extends ChangeNotifier {
       error = null;
       notifyListeners();
     }
+
     final errors = <Object>[];
     try {
-      await Future.wait<void>([
-        _capture(() async => status = await api.getStatus(), errors),
-        _capture(() async => commands = await api.getCommands(), errors),
-        _capture(() async => groups = await api.getGroups(), errors),
-        _capture(() async => approvals = await api.getApprovals(), errors),
-        _capture(
-          () async => statistics = ApiStatistics.fromJson(
-            await api.getStatistics(period: statisticsPeriod),
+      // /status is the authorization bootstrap. Read it first so a restricted
+      // device never sprays requests at endpoints it is not allowed to use.
+      try {
+        status = await api.getStatus();
+      } catch (statusError) {
+        errors.add(statusError);
+        error = '$statusError';
+        return;
+      }
+
+      final work = <Future<void>>[];
+
+      if (can('commands.read')) {
+        work.add(_capture(() async => commands = await api.getCommands(), errors));
+      } else {
+        commands = [];
+      }
+
+      if (can('groups.read')) {
+        work.add(_capture(() async => groups = await api.getGroups(), errors));
+      } else {
+        groups = [];
+      }
+
+      if (can('approvals.read')) {
+        work.add(
+          _capture(() async => approvals = await api.getApprovals(), errors),
+        );
+      } else {
+        approvals = [];
+      }
+
+      if (can('statistics.read')) {
+        work.add(
+          _capture(
+            () async => statistics = ApiStatistics.fromJson(
+              await api.getStatistics(period: statisticsPeriod),
+            ),
+            errors,
           ),
-          errors,
-        ),
-        _capture(() async => settings = await api.getSettings(), errors),
-        _capture(
-          () async => whatsappStatus =
-              ApiWhatsAppStatus.fromJson(await api.getWhatsAppStatus()),
-          errors,
-        ),
-        _capture(
-          () async => scheduledCampaigns = await api.getScheduledCampaigns(),
-          errors,
-        ),
-        _capture(() async => broadcasts = await api.getBroadcasts(), errors),
-      ]);
+        );
+      } else {
+        statistics = ApiStatistics.empty;
+      }
+
+      if (can('settings.read')) {
+        work.add(_capture(() async => settings = await api.getSettings(), errors));
+      } else {
+        settings = {};
+      }
+
+      if (can('whatsapp.read')) {
+        work.add(
+          _capture(
+            () async => whatsappStatus =
+                ApiWhatsAppStatus.fromJson(await api.getWhatsAppStatus()),
+            errors,
+          ),
+        );
+      } else {
+        whatsappStatus = ApiWhatsAppStatus.empty;
+      }
+
+      if (can('scheduled.read')) {
+        work.add(
+          _capture(
+            () async => scheduledCampaigns = await api.getScheduledCampaigns(),
+            errors,
+          ),
+        );
+      } else {
+        scheduledCampaigns = [];
+      }
+
+      if (can('broadcasts.read')) {
+        work.add(
+          _capture(() async => broadcasts = await api.getBroadcasts(), errors),
+        );
+      } else {
+        broadcasts = [];
+      }
+
+      await Future.wait<void>(work);
       isLinked = (await secureStore.refreshToken) != null;
       error = errors.isEmpty ? null : '${errors.first}';
     } finally {
@@ -149,67 +248,74 @@ class AppController extends ChangeNotifier {
   ) async {
     try {
       await operation();
-    } catch (error) {
-      errors.add(error);
+    } catch (operationError) {
+      errors.add(operationError);
     }
   }
 
   Future<void> refreshCommands() async {
+    if (!can('commands.read')) return;
     commands = await api.getCommands();
     notifyListeners();
   }
 
   Future<void> refreshGroups() async {
+    if (!can('groups.read')) return;
     groups = await api.getGroups();
     notifyListeners();
   }
 
   Future<void> refreshApprovals() async {
+    if (!can('approvals.read')) return;
     approvals = await api.getApprovals();
     notifyListeners();
   }
 
   Future<void> refreshStats({String? period}) async {
+    if (!can('statistics.read')) return;
     final next = period ?? statisticsPeriod;
     if (!const {'24h', '7d', '30d'}.contains(next)) return;
     statisticsPeriod = next;
     statsBusy = true;
     notifyListeners();
     try {
-      statistics = ApiStatistics.fromJson(await api.getStatistics(period: next));
+      statistics =
+          ApiStatistics.fromJson(await api.getStatistics(period: next));
     } finally {
       statsBusy = false;
       notifyListeners();
     }
   }
 
-  Future<void> setStatisticsPeriod(String period) => refreshStats(period: period);
+  Future<void> setStatisticsPeriod(String period) =>
+      refreshStats(period: period);
 
   Future<void> refreshWhatsApp() async {
-    whatsappStatus = ApiWhatsAppStatus.fromJson(await api.getWhatsAppStatus());
+    if (!can('whatsapp.read')) return;
+    whatsappStatus =
+        ApiWhatsAppStatus.fromJson(await api.getWhatsAppStatus());
     notifyListeners();
   }
 
   Future<void> refreshScheduled() async {
+    if (!can('scheduled.read')) return;
     scheduledCampaigns = await api.getScheduledCampaigns();
     notifyListeners();
   }
 
   Future<void> refreshBroadcasts() async {
+    if (!can('broadcasts.read')) return;
     broadcasts = await api.getBroadcasts();
     notifyListeners();
   }
 
   Future<void> decideApproval(int id, bool approve) async {
+    if (!can('approvals.write')) {
+      throw StateError('هذا الجهاز لا يملك صلاحية إدارة الموافقات.');
+    }
     try {
-      await api
-          .decideApproval(id, approve)
-          .timeout(const Duration(seconds: 8));
+      await api.decideApproval(id, approve).timeout(const Duration(seconds: 8));
     } catch (requestError, requestStack) {
-      // A mobile connection may drop after the server has already committed the
-      // decision. Verify the authoritative pending list before reporting a
-      // failure, so the UI never spins forever or asks the owner to repeat a
-      // decision that already won.
       List<ApiApproval> latest;
       try {
         latest = await api.getApprovals().timeout(const Duration(seconds: 5));
@@ -239,10 +345,7 @@ class AppController extends ChangeNotifier {
       approvals = results[0] as List<ApiApproval>;
       groups = results[1] as List<ApiGroup>;
       notifyListeners();
-    } catch (_) {
-      // The accepted decision is already authoritative. The normal SSE/fallback
-      // refresh will reconcile metadata if this secondary refresh fails.
-    }
+    } catch (_) {}
   }
 
   Future<void> handleAppResumed() {
@@ -257,10 +360,6 @@ class AppController extends ChangeNotifier {
 
   Future<void> _handleAppResumedOnce() async {
     if (!isLinked) return;
-
-    // Android can suspend timers/SSE while the app is in the background. On
-    // resume, rebuild the live stream and immediately reconcile server state.
-    // The API client handles access-token renewal without requiring re-linking.
     _startLiveUpdates();
     await refreshAll(silent: true);
   }
@@ -272,6 +371,7 @@ class AppController extends ChangeNotifier {
   }
 
   void _startLiveUpdates() {
+    if (!can('events.read')) return;
     _startEvents();
     _fallbackRefresh?.cancel();
     _fallbackRefresh = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -280,6 +380,7 @@ class AppController extends ChangeNotifier {
   }
 
   void _startEvents() {
+    if (!can('events.read')) return;
     _events?.cancel();
     _eventReconnect?.cancel();
     _events = api.events().listen(
@@ -308,7 +409,7 @@ class AppController extends ChangeNotifier {
 
   void _scheduleEventReconnect() {
     _eventReconnect?.cancel();
-    if (!isLinked) return;
+    if (!isLinked || !can('events.read')) return;
     _eventReconnect = Timer(const Duration(seconds: 5), _startEvents);
   }
 

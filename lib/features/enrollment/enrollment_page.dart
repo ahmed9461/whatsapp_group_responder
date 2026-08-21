@@ -1,5 +1,7 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
+
 import '../../core/api/api_exception.dart';
 import '../../core/app_controller.dart';
 import '../../core/models.dart';
@@ -13,7 +15,6 @@ class EnrollmentPage extends StatefulWidget {
 }
 
 class _EnrollmentPageState extends State<EnrollmentPage> {
-  late final TextEditingController _server;
   final _deviceName = TextEditingController(text: 'Android Device');
   EnrollmentResult? _request;
   Timer? _poller;
@@ -22,15 +23,8 @@ class _EnrollmentPageState extends State<EnrollmentPage> {
   String? _notice;
 
   @override
-  void initState() {
-    super.initState();
-    _server = TextEditingController(text: widget.controller.serverUrl);
-  }
-
-  @override
   void dispose() {
     _poller?.cancel();
-    _server.dispose();
     _deviceName.dispose();
     super.dispose();
   }
@@ -45,7 +39,6 @@ class _EnrollmentPageState extends State<EnrollmentPage> {
     });
 
     try {
-      await widget.controller.setServerUrl(_server.text);
       await widget.controller.api.health();
       final instance = await widget.controller.ensureDeviceInstanceId();
       final request = await widget.controller.api.createEnrollment(
@@ -59,12 +52,19 @@ class _EnrollmentPageState extends State<EnrollmentPage> {
       _startPolling(request);
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.code == 'ENROLLMENT_WINDOW_CLOSED'
-          ? 'استقبال طلبات الربط مغلق حاليًا. افتحه من Telegram ثم أعد المحاولة.'
-          : e.message);
-    } catch (e) {
+      setState(() {
+        _error = switch (e.code) {
+          'ENROLLMENT_WINDOW_CLOSED' =>
+            'استقبال طلبات الربط مغلق. اطلب من المالك فتح الربط من Telegram ثم أعد المحاولة.',
+          _ => e.message,
+        };
+      });
+    } catch (_) {
       if (!mounted) return;
-      setState(() => _error = 'تعذر الاتصال بالخادم: $e');
+      setState(() {
+        _error =
+            'تعذر الوصول إلى خدمة الربط حاليًا. تحقق من الإنترنت ثم أعد المحاولة.';
+      });
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -76,7 +76,7 @@ class _EnrollmentPageState extends State<EnrollmentPage> {
       const Duration(seconds: 2),
       (_) => _poll(request),
     );
-    _poll(request);
+    unawaited(_poll(request));
   }
 
   Future<void> _poll(EnrollmentResult request) async {
@@ -99,17 +99,17 @@ class _EnrollmentPageState extends State<EnrollmentPage> {
         setState(() {
           _request = null;
           if (status == 'rejected') {
-            _error = 'تم رفض طلب الربط من Telegram.';
+            _error = 'تم رفض طلب ربط هذا الجهاز من Telegram.';
             _notice = null;
           } else {
             _error = null;
             _notice =
-                'انتهى طلب الربط السابق فقط. إذا كان استقبال الربط ما زال مفتوحًا في Telegram، أرسل طلبًا جديدًا.';
+                'انتهت مهلة طلب الربط. افتح الربط من Telegram ثم أرسل طلبًا جديدًا.';
           }
         });
       }
     } catch (_) {
-      // Transient polling errors are tolerated until the request expires.
+      // A temporary mobile-network failure must not cancel a valid enrollment.
     }
   }
 
@@ -146,59 +146,53 @@ class _EnrollmentPageState extends State<EnrollmentPage> {
                             ),
                             const SizedBox(height: 8),
                             const Text(
-                              'اربط هذا الجهاز بالمشروع. سيصل طلب الموافقة إلى Telegram.',
+                              'اربط هذا الجهاز بالمشروع بموافقة المالك عبر Telegram. لا تحتاج لإدخال عنوان خادم أو تثبيت Tailscale.',
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 28),
                             TextField(
-                              controller: _server,
-                              textDirection: TextDirection.ltr,
-                              decoration: const InputDecoration(
-                                labelText: 'عنوان API',
-                                hintText: 'http://127.0.0.1:8787/api/v1',
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            TextField(
                               controller: _deviceName,
                               decoration: const InputDecoration(
                                 labelText: 'اسم الجهاز',
+                                prefixIcon: Icon(Icons.phone_android_rounded),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: scheme.surfaceContainerHigh,
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: const Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(Icons.security_rounded, size: 21),
+                                  SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      'بعد إرسال الطلب يختار المالك من Telegram صلاحية الجهاز والمجموعات المسموحة له. لا يتم تخزين Bot Token داخل التطبيق.',
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                             if (_notice != null) ...[
                               const SizedBox(height: 12),
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: scheme.secondaryContainer,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Icon(
-                                      Icons.info_outline_rounded,
-                                      size: 20,
-                                      color: scheme.onSecondaryContainer,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        _notice!,
-                                        style: TextStyle(
-                                          color: scheme.onSecondaryContainer,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                              _messageBox(
+                                _notice!,
+                                scheme.secondaryContainer,
+                                scheme.onSecondaryContainer,
+                                Icons.info_outline_rounded,
                               ),
                             ],
                             if (_error != null) ...[
                               const SizedBox(height: 12),
-                              Text(
+                              _messageBox(
                                 _error!,
-                                style: TextStyle(color: scheme.error),
+                                scheme.errorContainer,
+                                scheme.onErrorContainer,
+                                Icons.error_outline_rounded,
                               ),
                             ],
                             const SizedBox(height: 20),
@@ -211,24 +205,29 @@ class _EnrollmentPageState extends State<EnrollmentPage> {
                                         strokeWidth: 2,
                                       ),
                                     )
-                                  : const Icon(Icons.link_rounded),
-                              label: const Text('طلب ربط التطبيق'),
+                                  : const Icon(Icons.telegram_rounded),
+                              label: const Text('طلب الربط عبر Telegram'),
                             ),
                           ],
                         )
                       : Column(
                           children: [
-                            const Icon(Icons.hourglass_top_rounded, size: 56),
+                            Icon(
+                              Icons.verified_user_outlined,
+                              size: 58,
+                              color: scheme.primary,
+                            ),
                             const SizedBox(height: 16),
                             Text(
-                              'بانتظار موافقة Telegram',
+                              'بانتظار موافقة المالك',
                               style: Theme.of(context).textTheme.titleLarge,
                             ),
-                            const SizedBox(height: 18),
+                            const SizedBox(height: 8),
                             const Text(
-                              'تأكد أن رمز التحقق نفسه ظاهر في Telegram.',
+                              'وصل طلب الربط إلى Telegram. قارن رمز التحقق قبل الموافقة.',
+                              textAlign: TextAlign.center,
                             ),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 18),
                             SelectableText(
                               _request!.verificationCode,
                               textDirection: TextDirection.ltr,
@@ -242,7 +241,12 @@ class _EnrollmentPageState extends State<EnrollmentPage> {
                             ),
                             const SizedBox(height: 18),
                             const LinearProgressIndicator(),
-                            const SizedBox(height: 18),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'بعد الموافقة سيكمل التطبيق الربط تلقائيًا حسب الصلاحيات التي اختارها المالك.',
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 14),
                             TextButton(
                               onPressed: () {
                                 _poller?.cancel();
@@ -261,6 +265,29 @@ class _EnrollmentPageState extends State<EnrollmentPage> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _messageBox(
+    String text,
+    Color background,
+    Color foreground,
+    IconData icon,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: foreground),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text, style: TextStyle(color: foreground))),
+        ],
       ),
     );
   }
