@@ -67,7 +67,7 @@ class _HomeShellState extends State<HomeShell> {
           ),
         ];
 
-        final selected = _index.clamp(0, entries.length - 1);
+        final selected = _index.clamp(0, entries.length - 1).toInt();
         final destinations = entries.map((entry) => entry.destination).toList();
         final pages = entries.map((entry) => entry.page).toList();
 
