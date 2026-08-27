@@ -14,7 +14,7 @@ class PreferencesStore {
   final SharedPreferencesAsync _prefs = SharedPreferencesAsync();
 
   Future<String> getServerUrl() async {
-    // v0.2.0 intentionally stops trusting previously entered URLs. This avoids
+    // v0.2.1 intentionally stops trusting previously entered URLs. This avoids
     // stale private/Tailscale-only addresses and keeps onboarding deterministic.
     final saved = (await _prefs.getString(_serverUrl))?.trim();
     if (saved != defaultServerUrl) {

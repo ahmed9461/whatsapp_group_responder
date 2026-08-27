@@ -17,15 +17,43 @@ class ResponderApp extends StatefulWidget {
 }
 
 class _ResponderAppState extends State<ResponderApp> with WidgetsBindingObserver {
+  late bool _isLinked;
+  late ThemeMode _themeMode;
+
   @override
   void initState() {
     super.initState();
+    _isLinked = widget.controller.isLinked;
+    _themeMode = widget.controller.themeMode;
+    widget.controller.addListener(_handleShellState);
     WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didUpdateWidget(covariant ResponderApp oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (identical(oldWidget.controller, widget.controller)) return;
+    oldWidget.controller.removeListener(_handleShellState);
+    _isLinked = widget.controller.isLinked;
+    _themeMode = widget.controller.themeMode;
+    widget.controller.addListener(_handleShellState);
+  }
+
+  void _handleShellState() {
+    final linked = widget.controller.isLinked;
+    final theme = widget.controller.themeMode;
+    if (linked == _isLinked && theme == _themeMode) return;
+    if (!mounted) return;
+    setState(() {
+      _isLinked = linked;
+      _themeMode = theme;
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    widget.controller.removeListener(_handleShellState);
     super.dispose();
   }
 
@@ -33,29 +61,28 @@ class _ResponderAppState extends State<ResponderApp> with WidgetsBindingObserver
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(widget.controller.handleAppResumed());
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      unawaited(widget.controller.handleAppPaused());
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: widget.controller,
-      builder: (context, _) {
-        return MaterialApp(
-          title: 'ردود واتساب',
-          debugShowCheckedModeBanner: false,
-          theme: buildAppTheme(Brightness.light),
-          darkTheme: buildAppTheme(Brightness.dark),
-          themeMode: widget.controller.themeMode,
-          builder: (context, child) => Directionality(
-            textDirection: TextDirection.rtl,
-            child: child ?? const SizedBox.shrink(),
-          ),
-          home: widget.controller.isLinked
-              ? HomeShell(controller: widget.controller)
-              : EnrollmentPage(controller: widget.controller),
-        );
-      },
+    return MaterialApp(
+      title: 'ردود واتساب',
+      debugShowCheckedModeBanner: false,
+      theme: buildAppTheme(Brightness.light),
+      darkTheme: buildAppTheme(Brightness.dark),
+      themeMode: _themeMode,
+      builder: (context, child) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: child ?? const SizedBox.shrink(),
+      ),
+      home: _isLinked
+          ? HomeShell(controller: widget.controller)
+          : EnrollmentPage(controller: widget.controller),
     );
   }
 }
