@@ -330,12 +330,13 @@ class _ContentComposerState extends State<ContentComposer> {
 
     try {
       setState(() => _uploading = true);
-      final bytes = await file.readAsBytes();
-      if (bytes.isEmpty) {
+      final size = await file.length();
+      if (size <= 0) {
         throw StateError('الملف المحدد فارغ');
       }
-      final asset = await widget.controller.api.uploadMedia(
-        bytes: bytes,
+      final asset = await widget.controller.api.uploadMediaStream(
+        openRead: () => file!.openRead(),
+        contentLength: size,
         kind: kind,
         mimeType: file.mimeType?.trim().isNotEmpty == true
             ? file.mimeType!

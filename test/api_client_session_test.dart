@@ -138,4 +138,70 @@ void main() {
     expect(store.refresh, isNull);
     api.close();
   });
+
+  test('streamed upload reopens the file exactly once after session refresh', () async {
+    final store = _MemorySecureStore();
+    var openReadCalls = 0;
+    var mediaCalls = 0;
+    final receivedBodies = <List<int>>[];
+    final api = ApiClient(
+      secureStore: store,
+      baseUrl: 'https://example.test/api/v1',
+      client: MockClient((request) async {
+        if (request.url.path.endsWith('/auth/refresh')) {
+          return _json(200, {
+            'data': {
+              'accessToken': 'access-2',
+              'refreshToken': 'refresh-2',
+              'accessExpiresAt': 1000,
+              'refreshExpiresAt': 2000,
+            },
+          });
+        }
+        if (request.url.path.endsWith('/media')) {
+          mediaCalls++;
+          receivedBodies.add(request.bodyBytes);
+          if (request.headers['authorization'] == 'Bearer expired-access') {
+            return _json(401, {
+              'error': {'code': 'UNAUTHORIZED', 'message': 'expired'},
+            });
+          }
+          return _json(201, {
+            'data': {
+              'id': 7,
+              'kind': 'image',
+              'mimeType': 'image/jpeg',
+              'sizeBytes': 4,
+              'originalName': 'photo.jpg',
+              'createdAt': 123,
+            },
+          });
+        }
+        return _json(404, const {});
+      }),
+    );
+
+    final asset = await api.uploadMediaStream(
+      openRead: () {
+        openReadCalls++;
+        return Stream<List<int>>.fromIterable(const [
+          [1, 2],
+          [3, 4],
+        ]);
+      },
+      contentLength: 4,
+      kind: 'image',
+      mimeType: 'image/jpeg',
+      fileName: 'photo.jpg',
+    );
+
+    expect(asset.id, 7);
+    expect(openReadCalls, 2);
+    expect(mediaCalls, 2);
+    expect(receivedBodies, [
+      [1, 2, 3, 4],
+      [1, 2, 3, 4],
+    ]);
+    api.close();
+  });
 }

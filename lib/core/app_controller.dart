@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import 'api/api_client.dart';
+import 'live_refresh_policy.dart';
 import 'models.dart';
 import 'storage/preferences_store.dart';
 import 'storage/secure_store.dart';
@@ -34,8 +35,12 @@ class AppController extends ChangeNotifier {
   StreamSubscription<Map<String, dynamic>>? _events;
   Timer? _eventReconnect;
   Timer? _fallbackRefresh;
-  bool _liveRefreshRunning = false;
-  bool _liveRefreshQueued = false;
+  Timer? _liveRefreshDebounce;
+  final Set<LiveResource> _pendingLiveResources = {};
+  bool _targetedRefreshRunning = false;
+  bool _eventsConnected = false;
+  bool _foreground = true;
+  int _eventReconnectAttempt = 0;
   Future<void>? _resumeInFlight;
 
   Map<String, dynamic> get deviceAccess {
@@ -104,7 +109,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> setServerUrl(String value) async {
-    // v0.2.0 uses one pinned public HTTPS endpoint. Keep this method only so
+    // v0.2.1 uses one pinned public HTTPS endpoint. Keep this method only so
     // older callers cannot accidentally persist a stale/private server URL.
     serverUrl = PreferencesStore.defaultServerUrl;
     await preferences.setServerUrl(serverUrl);
@@ -128,6 +133,9 @@ class AppController extends ChangeNotifier {
     await _events?.cancel();
     _eventReconnect?.cancel();
     _fallbackRefresh?.cancel();
+    _liveRefreshDebounce?.cancel();
+    _pendingLiveResources.clear();
+    _eventsConnected = false;
     isLinked = false;
     commands = [];
     groups = [];
@@ -158,6 +166,8 @@ class AppController extends ChangeNotifier {
       } catch (statusError) {
         errors.add(statusError);
         error = '$statusError';
+        isLinked = (await secureStore.refreshToken) != null;
+        if (!isLinked) _stopLiveUpdates();
         return;
       }
 
@@ -360,8 +370,20 @@ class AppController extends ChangeNotifier {
 
   Future<void> _handleAppResumedOnce() async {
     if (!isLinked) return;
-    _startLiveUpdates();
+    _foreground = true;
     await refreshAll(silent: true);
+    if (isLinked) _startLiveUpdates();
+  }
+
+  Future<void> handleAppPaused() async {
+    _foreground = false;
+    _eventsConnected = false;
+    _eventReconnect?.cancel();
+    _fallbackRefresh?.cancel();
+    _liveRefreshDebounce?.cancel();
+    _pendingLiveResources.clear();
+    await _events?.cancel();
+    _events = null;
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {
@@ -371,46 +393,147 @@ class AppController extends ChangeNotifier {
   }
 
   void _startLiveUpdates() {
-    if (!can('events.read')) return;
+    if (!_foreground || !can('events.read')) return;
     _startEvents();
     _fallbackRefresh?.cancel();
-    _fallbackRefresh = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (isLinked) unawaited(_refreshFromLiveSignal());
+    _fallbackRefresh = Timer.periodic(const Duration(seconds: 60), (_) {
+      // Polling is a recovery path only. A healthy SSE connection is already
+      // authoritative and must not trigger a full multi-request refresh loop.
+      if (isLinked && _foreground && !_eventsConnected) {
+        unawaited(refreshAll(silent: true));
+      }
     });
   }
 
   void _startEvents() {
-    if (!can('events.read')) return;
+    if (!_foreground || !can('events.read')) return;
     _events?.cancel();
     _eventReconnect?.cancel();
     _events = api.events().listen(
-      (_) => unawaited(_refreshFromLiveSignal()),
-      onDone: _scheduleEventReconnect,
-      onError: (_) => _scheduleEventReconnect(),
+      _handleProjectEvent,
+      onDone: () {
+        _events = null;
+        _scheduleEventReconnect();
+      },
+      onError: (_) {
+        _events = null;
+        _scheduleEventReconnect();
+      },
     );
   }
 
-  Future<void> _refreshFromLiveSignal() async {
-    if (!isLinked) return;
-    if (_liveRefreshRunning) {
-      _liveRefreshQueued = true;
+  void _handleProjectEvent(Map<String, dynamic> event) {
+    if (!_foreground || !isLinked) return;
+    final type = '${event['type'] ?? ''}';
+    if (type == 'ready') {
+      _eventsConnected = true;
+      _eventReconnectAttempt = 0;
       return;
     }
-    _liveRefreshRunning = true;
-    try {
-      do {
-        _liveRefreshQueued = false;
-        await refreshAll(silent: true);
-      } while (_liveRefreshQueued && isLinked);
-    } finally {
-      _liveRefreshRunning = false;
+
+    var resources = resourcesForProjectEvent(type);
+    if (type == 'device.updated') {
+      final data = event['data'];
+      final eventDeviceId = data is Map ? '${data['deviceId'] ?? ''}' : '';
+      final currentDeviceId = '${deviceAccess['id'] ?? ''}';
+      if (eventDeviceId.isNotEmpty && eventDeviceId != currentDeviceId) return;
+      resources = LiveResource.values.toSet();
     }
+    if (resources.isEmpty) return;
+    _pendingLiveResources.addAll(resources);
+    _liveRefreshDebounce ??= Timer(const Duration(milliseconds: 200), () {
+      _liveRefreshDebounce = null;
+      unawaited(_drainTargetedRefresh());
+    });
+  }
+
+  Future<void> _drainTargetedRefresh() async {
+    if (_targetedRefreshRunning || !isLinked || !_foreground) return;
+    _targetedRefreshRunning = true;
+    try {
+      while (_pendingLiveResources.isNotEmpty && isLinked && _foreground) {
+        final resources = Set<LiveResource>.from(_pendingLiveResources);
+        _pendingLiveResources.clear();
+        await _refreshResources(resources);
+      }
+    } finally {
+      _targetedRefreshRunning = false;
+    }
+  }
+
+  Future<void> _refreshResources(Set<LiveResource> resources) async {
+    final errors = <Object>[];
+
+    if (resources.contains(LiveResource.status)) {
+      try {
+        status = await api.getStatus();
+      } catch (statusError) {
+        errors.add(statusError);
+        isLinked = (await secureStore.refreshToken) != null;
+        if (!isLinked) _stopLiveUpdates();
+        error = '$statusError';
+        notifyListeners();
+        return;
+      }
+    }
+
+    final work = <Future<void>>[];
+    if (resources.contains(LiveResource.commands) && can('commands.read')) {
+      work.add(_capture(() async => commands = await api.getCommands(), errors));
+    }
+    if (resources.contains(LiveResource.groups) && can('groups.read')) {
+      work.add(_capture(() async => groups = await api.getGroups(), errors));
+    }
+    if (resources.contains(LiveResource.approvals) && can('approvals.read')) {
+      work.add(_capture(() async => approvals = await api.getApprovals(), errors));
+    }
+    if (resources.contains(LiveResource.statistics) && can('statistics.read')) {
+      work.add(_capture(() async {
+        statistics = ApiStatistics.fromJson(
+          await api.getStatistics(period: statisticsPeriod),
+        );
+      }, errors));
+    }
+    if (resources.contains(LiveResource.settings) && can('settings.read')) {
+      work.add(_capture(() async => settings = await api.getSettings(), errors));
+    }
+    if (resources.contains(LiveResource.whatsapp) && can('whatsapp.read')) {
+      work.add(_capture(() async {
+        whatsappStatus = ApiWhatsAppStatus.fromJson(await api.getWhatsAppStatus());
+      }, errors));
+    }
+    if (resources.contains(LiveResource.scheduled) && can('scheduled.read')) {
+      work.add(_capture(() async {
+        scheduledCampaigns = await api.getScheduledCampaigns();
+      }, errors));
+    }
+    if (resources.contains(LiveResource.broadcasts) && can('broadcasts.read')) {
+      work.add(_capture(() async => broadcasts = await api.getBroadcasts(), errors));
+    }
+
+    await Future.wait<void>(work);
+    isLinked = (await secureStore.refreshToken) != null;
+    error = errors.isEmpty ? null : '${errors.first}';
+    notifyListeners();
   }
 
   void _scheduleEventReconnect() {
     _eventReconnect?.cancel();
-    if (!isLinked || !can('events.read')) return;
-    _eventReconnect = Timer(const Duration(seconds: 5), _startEvents);
+    _eventsConnected = false;
+    if (!isLinked || !_foreground || !can('events.read')) return;
+    final seconds = min(30, 1 << min(_eventReconnectAttempt, 5));
+    _eventReconnectAttempt += 1;
+    _eventReconnect = Timer(Duration(seconds: seconds), _startEvents);
+  }
+
+  void _stopLiveUpdates() {
+    _events?.cancel();
+    _events = null;
+    _eventReconnect?.cancel();
+    _fallbackRefresh?.cancel();
+    _liveRefreshDebounce?.cancel();
+    _pendingLiveResources.clear();
+    _eventsConnected = false;
   }
 
   @override
@@ -418,6 +541,7 @@ class AppController extends ChangeNotifier {
     _events?.cancel();
     _eventReconnect?.cancel();
     _fallbackRefresh?.cancel();
+    _liveRefreshDebounce?.cancel();
     api.close();
     super.dispose();
   }

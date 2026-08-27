@@ -58,7 +58,7 @@ class ApiClient {
           body: jsonEncode({
             'deviceName': deviceName,
             'platform': 'android',
-            'appVersion': '0.2.0',
+            'appVersion': '0.2.1',
             'deviceInstanceId': deviceInstanceId,
           }),
         )
@@ -201,10 +201,29 @@ class ApiClient {
     required String mimeType,
     required String fileName,
   }) async {
-    final response = await _authorizedRequest(
-      'POST',
+    return uploadMediaStream(
+      openRead: () => Stream<List<int>>.value(bytes),
+      contentLength: bytes.length,
+      kind: kind,
+      mimeType: mimeType,
+      fileName: fileName,
+    );
+  }
+
+  Future<ApiMediaAsset> uploadMediaStream({
+    required Stream<List<int>> Function() openRead,
+    required int contentLength,
+    required String kind,
+    required String mimeType,
+    required String fileName,
+  }) async {
+    if (contentLength <= 0) {
+      throw ApiException('EMPTY_MEDIA', 'الملف المحدد فارغ');
+    }
+    final response = await _authorizedStreamUpload(
       '/media',
-      rawBody: bytes,
+      openRead: openRead,
+      contentLength: contentLength,
       extraHeaders: {
         'content-type': mimeType,
         'x-media-kind': kind,
@@ -440,17 +459,68 @@ class ApiClient {
     }
   }
 
-  Stream<Map<String, dynamic>> events() async* {
+  Future<http.Response> _authorizedStreamUpload(
+    String path, {
+    required Stream<List<int>> Function() openRead,
+    required int contentLength,
+    required Map<String, String> extraHeaders,
+    bool retry = true,
+    Duration timeout = const Duration(seconds: 90),
+  }) async {
+    final accessToken = await secureStore.accessToken;
+    if (accessToken == null) {
+      throw ApiException('UNAUTHORIZED', 'التطبيق غير مرتبط بالمشروع');
+    }
+
+    final request = http.StreamedRequest('POST', _uri(path));
+    request.headers.addAll({
+      'authorization': 'Bearer $accessToken',
+      ...extraHeaders,
+    });
+    request.contentLength = contentLength;
+
+    final responseFuture = _client.send(request).timeout(timeout);
+    try {
+      await request.sink.addStream(openRead()).timeout(timeout);
+      await request.sink.close().timeout(timeout);
+    } catch (_) {
+      unawaited(request.sink.close());
+      rethrow;
+    }
+    final response = await http.Response.fromStream(await responseFuture);
+
+    if (response.statusCode == 401 && retry) {
+      final refreshed = await refreshSession();
+      if (refreshed) {
+        return _authorizedStreamUpload(
+          path,
+          openRead: openRead,
+          contentLength: contentLength,
+          extraHeaders: extraHeaders,
+          retry: false,
+          timeout: timeout,
+        );
+      }
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      _throwApi(response);
+    }
+    return response;
+  }
+
+  Stream<Map<String, dynamic>> events({bool retry = true}) async* {
     final token = await secureStore.accessToken;
     if (token == null) return;
 
     final request = http.Request('GET', _uri('/events'))
       ..headers['authorization'] = 'Bearer $token'
       ..headers['accept'] = 'text/event-stream';
-    final response = await _client.send(request);
+    final response = await _client
+        .send(request)
+        .timeout(const Duration(seconds: 20));
 
-    if (response.statusCode == 401 && await refreshSession()) {
-      yield* events();
+    if (response.statusCode == 401 && retry && await refreshSession()) {
+      yield* events(retry: false);
       return;
     }
     if (response.statusCode != 200) return;
