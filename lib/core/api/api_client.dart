@@ -58,7 +58,7 @@ class ApiClient {
           body: jsonEncode({
             'deviceName': deviceName,
             'platform': 'android',
-            'appVersion': '0.2.1',
+            'appVersion': '0.3.0',
             'deviceInstanceId': deviceInstanceId,
           }),
         )
@@ -193,6 +193,16 @@ class ApiClient {
 
   Future<Map<String, dynamic>> setApprovalTimeoutSeconds(int seconds) {
     return patchMap('/settings', {'approvalTimeoutSeconds': seconds});
+  }
+
+  Future<Map<String, dynamic>> setPrivateAutoReply({
+    bool? enabled,
+    String? message,
+  }) {
+    final fields = <String, dynamic>{};
+    if (enabled != null) fields['enabled'] = enabled;
+    if (message != null) fields['message'] = message;
+    return patchMap('/settings', {'privateAutoReply': fields});
   }
 
   Future<ApiMediaAsset> uploadMedia({

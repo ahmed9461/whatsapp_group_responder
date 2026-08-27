@@ -14,16 +14,20 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   final _deepSeekKey = TextEditingController();
+  final _privateReplyText = TextEditingController();
   String _model = 'deepseek-v4-pro';
   bool _thinking = false;
   bool _loadingAi = true;
   bool _testing = false;
   bool _showKey = false;
   bool _savingApprovalTimeout = false;
+  bool _savingPrivateReply = false;
 
   @override
   void initState() {
     super.initState();
+    final raw = widget.controller.settings['privateAutoReply'];
+    if (raw is Map) _privateReplyText.text = '${raw['message'] ?? ''}';
     _loadAi();
   }
 
@@ -37,6 +41,7 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void dispose() {
     _deepSeekKey.dispose();
+    _privateReplyText.dispose();
     super.dispose();
   }
 
@@ -46,6 +51,11 @@ class _SettingsPageState extends State<SettingsPage> {
     final approvalTimeout =
         int.tryParse('${widget.controller.settings['approvalTimeoutSeconds'] ?? 30}') ??
             30;
+    final privateAutoReplyRaw = widget.controller.settings['privateAutoReply'];
+    final privateAutoReply = privateAutoReplyRaw is Map
+        ? Map<String, dynamic>.from(privateAutoReplyRaw)
+        : <String, dynamic>{};
+    final privateReplyEnabled = privateAutoReply['enabled'] == true;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -81,8 +91,63 @@ class _SettingsPageState extends State<SettingsPage> {
                     value: maintenance,
                     onChanged: (value) async {
                       await widget.controller.api.setMaintenance(value);
-                      await widget.controller.refreshAll();
+                      await widget.controller.refreshSettings();
                     },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text('الرسائل الخاصة', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 10),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    secondary: const CircleAvatar(
+                      child: Icon(Icons.mark_chat_unread_rounded),
+                    ),
+                    title: const Text('الرد التلقائي للخاص'),
+                    subtitle: const Text(
+                      'يرسل الرقم الرئيسي رسالة واحدة لكل شخص خلال 12 ساعة، لمنع التكرار والحلقات.',
+                    ),
+                    value: privateReplyEnabled,
+                    onChanged: _savingPrivateReply
+                        ? null
+                        : _setPrivateAutoReplyEnabled,
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _privateReplyText,
+                    enabled: !_savingPrivateReply,
+                    minLines: 2,
+                    maxLines: 6,
+                    maxLength: 3500,
+                    textDirection: TextDirection.rtl,
+                    decoration: const InputDecoration(
+                      labelText: 'رسالة الرد',
+                      hintText: 'مثال: أهلًا بك، استلمنا رسالتك وسنرد عليك قريبًا.',
+                      alignLabelWithHint: true,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.icon(
+                    onPressed: _savingPrivateReply
+                        ? null
+                        : _savePrivateAutoReplyMessage,
+                    icon: _savingPrivateReply
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2.2),
+                          )
+                        : const Icon(Icons.save_rounded),
+                    label: const Text('حفظ رسالة الرد'),
                   ),
                 ],
               ),
@@ -321,7 +386,7 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() => _savingApprovalTimeout = true);
     try {
       await widget.controller.api.setApprovalTimeoutSeconds(seconds);
-      await widget.controller.refreshAll(silent: true);
+      await widget.controller.refreshSettings();
       if (mounted) {
         setState(() {});
         ScaffoldMessenger.of(context).showSnackBar(
@@ -340,6 +405,71 @@ class _SettingsPageState extends State<SettingsPage> {
       }
     } finally {
       if (mounted) setState(() => _savingApprovalTimeout = false);
+    }
+  }
+
+  Future<void> _setPrivateAutoReplyEnabled(bool enabled) async {
+    final message = _privateReplyText.text.trim();
+    final raw = widget.controller.settings['privateAutoReply'];
+    final savedMessage = raw is Map ? '${raw['message'] ?? ''}'.trim() : '';
+    if (enabled && savedMessage.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('اكتب رسالة الرد واحفظها قبل تشغيل الميزة.')),
+      );
+      return;
+    }
+    if (enabled && message != savedMessage) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('احفظ تعديلات الرسالة قبل تشغيل الميزة.')),
+      );
+      return;
+    }
+    setState(() => _savingPrivateReply = true);
+    try {
+      await widget.controller.api.setPrivateAutoReply(enabled: enabled);
+      await widget.controller.refreshSettings();
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تم ${enabled ? 'تشغيل' : 'إيقاف'} الرد التلقائي للخاص.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر تحديث الرد التلقائي: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingPrivateReply = false);
+    }
+  }
+
+  Future<void> _savePrivateAutoReplyMessage() async {
+    final message = _privateReplyText.text.trim();
+    if (message.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('رسالة الرد لا يمكن أن تكون فارغة.')),
+      );
+      return;
+    }
+    setState(() => _savingPrivateReply = true);
+    try {
+      await widget.controller.api.setPrivateAutoReply(message: message);
+      await widget.controller.refreshSettings();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم حفظ رسالة الرد التلقائي.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر حفظ رسالة الرد: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingPrivateReply = false);
     }
   }
 

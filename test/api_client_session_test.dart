@@ -204,4 +204,38 @@ void main() {
     ]);
     api.close();
   });
+
+  test('private auto reply update sends one bounded settings patch', () async {
+    final store = _MemorySecureStore()..access = 'access-ok';
+    Map<String, dynamic>? requestBody;
+    final api = ApiClient(
+      secureStore: store,
+      baseUrl: 'https://example.test/api/v1',
+      client: MockClient((request) async {
+        expect(request.method, 'PATCH');
+        expect(request.url.path, '/api/v1/settings');
+        requestBody = Map<String, dynamic>.from(jsonDecode(request.body));
+        return _json(200, {
+          'data': {
+            'privateAutoReply': {
+              'enabled': true,
+              'message': 'أهلًا بك',
+              'cooldownMinutes': 720,
+            },
+          },
+        });
+      }),
+    );
+
+    final result = await api.setPrivateAutoReply(
+      enabled: true,
+      message: 'أهلًا بك',
+    );
+
+    expect(requestBody, {
+      'privateAutoReply': {'enabled': true, 'message': 'أهلًا بك'},
+    });
+    expect((result['privateAutoReply'] as Map)['enabled'], isTrue);
+    api.close();
+  });
 }
