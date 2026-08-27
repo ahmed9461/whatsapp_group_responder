@@ -9,7 +9,7 @@ void main() {
     final access = File('lib/features/more/more_page.dart').readAsStringSync();
 
     expect(settings, contains('الرد التلقائي للخاص'));
-    expect(settings, contains('مرة واحدة لكل شخص خلال 12 ساعة'));
+    expect(settings, contains('رسالة واحدة لكل شخص خلال 12 ساعة'));
     expect(settings, contains('_savePrivateAutoReplyMessage'));
     expect(api, contains("patchMap('/settings', {'privateAutoReply': fields})"));
     expect(access, contains("can('settings.read')"));
