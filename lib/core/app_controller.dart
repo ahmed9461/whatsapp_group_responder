@@ -109,7 +109,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> setServerUrl(String value) async {
-    // v0.2.1 uses one pinned public HTTPS endpoint. Keep this method only so
+    // v0.3.0 uses one pinned public HTTPS endpoint. Keep this method only so
     // older callers cannot accidentally persist a stale/private server URL.
     serverUrl = PreferencesStore.defaultServerUrl;
     await preferences.setServerUrl(serverUrl);
@@ -250,6 +250,16 @@ class AppController extends ChangeNotifier {
       if (!silent) busy = false;
       notifyListeners();
     }
+  }
+
+  Future<void> refreshSettings() async {
+    if (!can('settings.read')) {
+      settings = {};
+      notifyListeners();
+      return;
+    }
+    settings = await api.getSettings();
+    notifyListeners();
   }
 
   Future<void> _capture(
